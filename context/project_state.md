@@ -1,32 +1,53 @@
-# Project State
+# Jett Project State
 
-## Current Phase: Phase 1 — Voice Pipeline
+> Last updated: 2025-02-03
+> Updated by: Opus
 
-### Status: In Progress
+---
+
+## Current Phase
+
+**Phase 1: Core Voice Loop — IN PROGRESS**
+
+## Phase Progress
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Python environment setup | ✅ Complete | Python 3.11, venv configured |
+| faster-whisper STT setup | ✅ Complete | CUDA working, 1.1GB VRAM, 755ms/3s audio |
+| Ollama + Qwen3 8B installation | ⬜ Not started | Next up |
+| Kokoro-82M TTS integration | ⬜ Not started | |
+| End-to-end voice test | ⬜ Not started | |
+| VRAM validation | 🟡 In progress | STT verified, LLM/TTS pending |
 
 ## What's Done
+
 - [x] Project directory structure created
 - [x] Context files initialized
 - [x] Architecture documented
 - [x] Security model defined
 - [x] VRAM budget calculated
-- [x] Python environment setup (venv + requirements.txt)
-- [x] STT module scaffolded (faster-whisper integration)
-- [x] faster-whisper STT verified on CUDA (1.1 GB VRAM, 755ms latency)
+- [x] Two-machine deployment strategy documented
+- [x] Git repo initialized, pushed to GitHub
+- [x] Python 3.11 environment with venv
+- [x] faster-whisper STT with CUDA acceleration
+- [x] CUDA dependencies resolved (nvidia-cublas-cu12, nvidia-cudnn-cu12)
+- [x] STT VRAM verified: 1.1GB (better than 1.5GB estimate)
 
 ## What's Next
-- [ ] **Phase 1**: Voice pipeline (wake word → VAD → STT → TTS) ← **IN PROGRESS**
-- [ ] **Phase 2**: Local LLM integration (Ollama + Qwen3 8B)
-- [ ] **Phase 3**: Hybrid routing (local ↔ Claude)
-- [ ] **Phase 4**: VPS infrastructure (WireGuard, Docker, n8n, PostgreSQL, Qdrant)
-- [ ] **Phase 5**: Security hardening (allowlist, rate limiting, audit logging)
-- [ ] **Phase 6**: Dashboard (Next.js control interface)
-- [ ] **Phase 7**: Integration testing and latency optimization
+
+1. **Install Ollama** — Local LLM runtime
+2. **Pull Qwen3 8B** — Q4_K_M quantization, verify 4.5GB VRAM
+3. **Integrate Kokoro-82M TTS** — Verify 0.2GB VRAM
+4. **VRAM validation** — All three models loaded simultaneously
+5. **End-to-end voice test** — Mic → STT → LLM → TTS → Speaker
 
 ## Blockers
+
 - None currently
 
 ## Notes
+
 - Target hardware: RTX 3070 (8 GB VRAM)
 - All models must fit within VRAM budget (see `vram_budget.md`)
 - Privacy-first: audio never leaves local machine
