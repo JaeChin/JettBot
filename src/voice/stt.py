@@ -9,7 +9,24 @@ Usage:
     python -m src.voice.stt test.wav     # Transcribe file
 """
 
+import os
 import sys
+
+# Add NVIDIA DLL paths for CUDA support (must be before importing ctranslate2/faster_whisper)
+def _setup_cuda_paths():
+    """Add NVIDIA library paths for Windows CUDA support."""
+    if sys.platform == "win32":
+        site_packages = os.path.join(sys.prefix, "Lib", "site-packages")
+        nvidia_bins = [
+            os.path.join(site_packages, "nvidia", "cudnn", "bin"),
+            os.path.join(site_packages, "nvidia", "cublas", "bin"),
+        ]
+        for path in nvidia_bins:
+            if os.path.exists(path) and path not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = path + os.pathsep + os.environ.get("PATH", "")
+
+_setup_cuda_paths()
+
 import time
 from pathlib import Path
 

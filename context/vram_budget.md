@@ -41,6 +41,10 @@ If VRAM budget is exceeded:
 | Qwen3 8B → Qwen3 4B | ~2.0 GB | Significantly reduced capability |
 | Offload STT to CPU | 1.5 GB | Higher STT latency |
 
+## Validation Checkpoints
+
+- [ ] STT loaded - VRAM: ~1.5 GB (estimated, Windows WDDM doesn't show per-process accurately)
+
 ## Notes
 
 - VRAM measurements are approximate — actual usage depends on batch size, context length, and CUDA allocator behavior

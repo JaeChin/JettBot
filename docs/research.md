@@ -107,4 +107,4 @@ volumes:
 | STT (transcription) | < 200ms | GPU, depends on utterance length |
 | LLM (local, first token) | < 300ms | GPU, Ollama streaming |
 | TTS (first audio) | < 100ms | GPU, streaming synthesis |
-| **Total (excl. VAD wait)** | **< 500ms** | |
+| **Total (excl. VAD wait)** | **< 500ms** | 
