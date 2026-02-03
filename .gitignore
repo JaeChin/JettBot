@@ -41,3 +41,6 @@ models/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Test audio files
+*.wav
