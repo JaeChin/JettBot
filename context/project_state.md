@@ -1,6 +1,6 @@
 # Project State
 
-## Current Phase: Phase 0 — Project Setup
+## Current Phase: Phase 1 — Voice Pipeline
 
 ### Status: In Progress
 
@@ -10,9 +10,11 @@
 - [x] Architecture documented
 - [x] Security model defined
 - [x] VRAM budget calculated
+- [x] Python environment setup (venv + requirements.txt)
+- [x] STT module scaffolded (faster-whisper integration)
 
 ## What's Next
-- [ ] **Phase 1**: Voice pipeline (wake word → VAD → STT → TTS)
+- [ ] **Phase 1**: Voice pipeline (wake word → VAD → STT → TTS) ← **IN PROGRESS**
 - [ ] **Phase 2**: Local LLM integration (Ollama + Qwen3 8B)
 - [ ] **Phase 3**: Hybrid routing (local ↔ Claude)
 - [ ] **Phase 4**: VPS infrastructure (WireGuard, Docker, n8n, PostgreSQL, Qdrant)

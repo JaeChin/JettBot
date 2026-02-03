@@ -1,0 +1,10 @@
+# STT - Speech to Text
+faster-whisper==1.0.3
+
+# Audio capture and processing
+sounddevice==0.4.6
+soundfile==0.12.1
+numpy==1.26.4
+
+# Utilities
+python-dotenv==1.0.1
