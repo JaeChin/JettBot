@@ -12,6 +12,7 @@
 - [x] VRAM budget calculated
 - [x] Python environment setup (venv + requirements.txt)
 - [x] STT module scaffolded (faster-whisper integration)
+- [x] faster-whisper STT verified on CUDA (1.1 GB VRAM, 755ms latency)
 
 ## What's Next
 - [ ] **Phase 1**: Voice pipeline (wake word → VAD → STT → TTS) ← **IN PROGRESS**

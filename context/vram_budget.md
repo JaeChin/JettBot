@@ -4,7 +4,7 @@
 
 | Component | Model | Quantization | VRAM | Status |
 |---|---|---|---|---|
-| STT | faster-whisper distil-large-v3 | INT8 | 1.5 GB | Planned |
+| STT | faster-whisper distil-large-v3 | INT8 | **1.1 GB** | Verified |
 | LLM | Qwen3 8B | Q4_K_M | 4.5 GB | Planned |
 | TTS | Kokoro-82M | FP16 | 0.2 GB | Planned |
 | **Total** | | | **6.2 GB** | |
@@ -43,7 +43,7 @@ If VRAM budget is exceeded:
 
 ## Validation Checkpoints
 
-- [ ] STT loaded - VRAM: ~1.5 GB (estimated, Windows WDDM doesn't show per-process accurately)
+- [x] STT loaded - VRAM: 1.1 GB
 
 ## Notes
 
