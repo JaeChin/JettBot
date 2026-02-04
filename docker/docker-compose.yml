@@ -1,0 +1,160 @@
+# Jett VPS Infrastructure — Hardened Docker Compose
+#
+# All services bound to WireGuard interface (10.0.0.2) only.
+# No service is exposed to the public internet.
+#
+# Usage:
+#   cp .env.example .env   # Fill in real secrets
+#   docker compose up -d
+
+services:
+
+  # ── n8n (Workflow Automation) ──────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: jett-n8n
+    ports:
+      - "10.0.0.2:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid
+    mem_limit: 512m
+    cpus: 1.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jett-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── PostgreSQL (State + Audit Logs) ────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: jett-postgres
+    ports:
+      - "10.0.0.2:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid
+      - /run/postgresql:rw,noexec,nosuid
+    mem_limit: 512m
+    cpus: 1.0
+    restart: unless-stopped
+    networks:
+      - jett-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Qdrant (Vector Database / RAG) ─────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: jett-qdrant
+    ports:
+      - "10.0.0.2:6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid
+    mem_limit: 1g
+    cpus: 1.0
+    restart: unless-stopped
+    networks:
+      - jett-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Portainer (Container Management API) ───────────────────────────
+  # SECURITY NOTE: Portainer requires Docker socket access and runs as
+  # root. This is an intentional tradeoff — it serves as the ONLY entry
+  # point for container management, replacing direct socket access.
+  # Mitigations:
+  #   - Socket mounted read-only (:ro)
+  #   - Bound to WireGuard IP only (not public)
+  #   - Token-authenticated API
+  #   - All other hardening still applied (dropped caps, no-new-privileges)
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: jett-portainer
+    ports:
+      - "10.0.0.2:9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    # NOTE: Cannot use user: "1000:1000" — needs root for Docker socket
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+    networks:
+      - jett-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  n8n_data:
+  postgres_data:
+  qdrant_data:
+  portainer_data:
+
+networks:
+  jett-internal:
+    driver: bridge
+    internal: false  # Needs external for WireGuard-bound ports
