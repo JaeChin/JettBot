@@ -65,6 +65,19 @@ DENIED (always):
 - Never log secret values
 - Rotate API keys on suspected compromise
 
+## Implementation Status
+
+| Control | Status | Location |
+|---------|--------|----------|
+| API wrapper with allowlist | ✅ Complete | src/security/wrapper.py |
+| Rate limiting | ✅ Complete | 10 ops/minute sliding window |
+| Audit logging | ✅ Complete | Append-only, secret redaction |
+| Container hardening | ✅ Defined | docker/docker-compose.yml |
+| WireGuard tunnel | ⬜ Pending | Config files not yet created |
+| VPS deployment | ⬜ Pending | Waiting for WireGuard setup |
+| UFW firewall rules | ⬜ Pending | deny all, allow 51820/UDP |
+| Dashboard audit feed | ⬜ Pending | Waiting for backend integration |
+
 ## Incident Response
 
 1. Rate limit triggered → Log + alert + cooldown

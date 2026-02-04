@@ -120,3 +120,62 @@
 - CTranslate2 backend for optimized inference
 - Good accuracy for English
 - INT8 quantization reduces VRAM with minimal quality loss
+
+---
+
+## ADR-007: Explicit Allowlists Over Blocklists
+
+**Status**: Accepted
+**Date**: 2026-02-04
+
+**Context**: Security wrapper needs to control which container operations the AI can perform.
+
+**Options Considered**:
+1. Blocklist (deny dangerous operations) — enumerate known-bad actions
+2. Allowlist (permit safe operations only) — enumerate known-good actions
+
+**Decision**: Use frozenset allowlists. Only explicitly permitted operations are allowed; everything else is denied by default.
+
+**Rationale**:
+- Allowlist = default deny. Can't forget to block something.
+- Blocklist = default allow. One missed entry and the system is vulnerable.
+- frozenset makes the allowlist immutable at runtime — no dynamic modification.
+
+**Consequences**:
+- Pro: Zero risk of forgetting to block a new dangerous operation
+- Pro: Immutable at runtime — can't be modified by prompt injection
+- Con: Less flexible — adding new operations requires code change
+- Trade-off: Security > convenience
+
+**Interview Framing**:
+> "With blocklists you're playing whack-a-mole trying to anticipate every attack. With allowlists, if I didn't explicitly permit it, it's denied. The allowlist is a frozenset — immutable at runtime — so even if the AI is prompt-injected, it can't modify its own permissions."
+
+---
+
+## ADR-008: VPS Services WireGuard-Only Binding
+
+**Status**: Accepted
+**Date**: 2026-02-04
+
+**Context**: VPS services (n8n, PostgreSQL, Qdrant, Portainer) need to be accessible from the local machine but not from the public internet.
+
+**Options Considered**:
+1. Public IP + UFW firewall — services on 0.0.0.0, firewall restricts access
+2. Cloudflare Tunnel — route through Cloudflare's network
+3. WireGuard-only binding — bind services to 10.0.0.2 (tunnel IP)
+
+**Decision**: Bind all Docker services to `10.0.0.2` (WireGuard interface IP). No service listens on the public interface.
+
+**Rationale**:
+- Zero attack surface on the public internet — services are unreachable without the tunnel
+- Defense-in-depth: even if UFW is misconfigured, services aren't listening publicly
+- Simpler than Cloudflare Tunnel, no third-party dependency
+
+**Consequences**:
+- Pro: Nothing exposed on public interface, even with firewall misconfiguration
+- Pro: No third-party dependency (Cloudflare)
+- Con: Requires WireGuard setup on both local machine and VPS
+- Con: If WireGuard tunnel drops, all services are unreachable
+
+**Interview Framing**:
+> "Nothing is exposed on the public interface. You'd have to compromise the WireGuard tunnel first, which requires the private key. Even if someone misconfigures the firewall, the services simply aren't listening on the public IP."

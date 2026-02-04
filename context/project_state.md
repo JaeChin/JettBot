@@ -1,6 +1,6 @@
 # Jett Project State
 
-> Last updated: 2025-02-04
+> Last updated: 2026-02-04
 > Updated by: Opus
 
 ---
@@ -13,13 +13,14 @@
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Python environment setup | ✅ Complete | Python 3.11, venv configured |
+| Python environment setup | ✅ Complete | Python 3.14.2, venv configured |
 | faster-whisper STT setup | ✅ Complete | CUDA working, 1.1GB VRAM, 755ms/3s audio |
-| Ollama + Qwen3 8B installation | ⬜ Not started | Next up |
-| Kokoro-82M TTS integration | ⬜ Not started | |
-| End-to-end voice test | ⬜ Not started | |
-| VRAM validation | 🟡 In progress | STT verified, LLM/TTS pending |
 | Security wrapper | ✅ Complete | Allowlist, rate limiting, audit logging, 30/30 tests |
+| VPS docker-compose | ✅ Complete | Hardened, WireGuard-bound, 4 services |
+| Ollama + Qwen3 8B installation | ⬜ Not started | Next up (needs GPU) |
+| Kokoro-82M TTS integration | ⬜ Not started | Needs GPU |
+| End-to-end voice test | ⬜ Not started | Needs GPU |
+| VRAM validation | 🟡 In progress | STT verified, LLM/TTS pending |
 
 ## What's Done
 
@@ -30,12 +31,14 @@
 - [x] VRAM budget calculated
 - [x] Two-machine deployment strategy documented
 - [x] Git repo initialized, pushed to GitHub
-- [x] Python 3.11 environment with venv
+- [x] Python 3.14.2 environment with venv
 - [x] faster-whisper STT with CUDA acceleration
 - [x] CUDA dependencies resolved (nvidia-cublas-cu12, nvidia-cudnn-cu12)
 - [x] STT VRAM verified: 1.1GB (better than 1.5GB estimate)
 - [x] Dashboard scaffolded (Next.js 14, shadcn/ui, dark theme)
 - [x] Security wrapper implemented (allowlist, rate limiting, audit, secret redaction)
+- [x] VPS docker-compose created (n8n, postgres, qdrant, portainer)
+- [x] Container hardening applied (non-root, read-only, dropped caps, WireGuard-only)
 
 ## What's Next
 
@@ -57,12 +60,26 @@
 
 ## Session Log
 
-### 2025-02-04
+### 2025-02-04 (Laptop — No GPU)
 - Dashboard scaffolded: Next.js 14 + shadcn/ui + Tailwind v4
 - Dark theme with cyan accent
 - Pages: Dashboard, Containers, History, Settings
 - All components with mock data, ready for backend integration
-- Working from laptop (no GPU tasks)
-- Security wrapper implemented: allowlist (frozenset), rate limiting, audit logging, secret redaction
-- 30/30 tests passing, demo_security.py exercising all boundaries
-- Path traversal attacks blocked (../../etc/passwd denied)
+
+### 2026-02-04 (Laptop — No GPU)
+- Implemented security wrapper (src/security/)
+  - Explicit allowlists (frozenset) for containers/actions
+  - Rate limiting: 10 ops/minute sliding window
+  - Immutable audit logging with secret redaction
+  - 30 unit tests proving boundaries work
+- Created VPS docker-compose (docker/)
+  - n8n, postgres, qdrant, portainer
+  - All services bound to WireGuard IP (10.0.0.2)
+  - Full security hardening: non-root, read-only, dropped caps
+  - n8n wired to PostgreSQL backend
+
+Next session (GPU):
+- Install Ollama + pull Qwen3 8B
+- Test LLM inference, measure VRAM
+- Install Kokoro-82M TTS
+- Wire STT → LLM → TTS for end-to-end test
