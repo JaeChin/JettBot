@@ -19,6 +19,7 @@
 | Kokoro-82M TTS integration | ⬜ Not started | |
 | End-to-end voice test | ⬜ Not started | |
 | VRAM validation | 🟡 In progress | STT verified, LLM/TTS pending |
+| Security wrapper | ✅ Complete | Allowlist, rate limiting, audit logging, 30/30 tests |
 
 ## What's Done
 
@@ -34,6 +35,7 @@
 - [x] CUDA dependencies resolved (nvidia-cublas-cu12, nvidia-cudnn-cu12)
 - [x] STT VRAM verified: 1.1GB (better than 1.5GB estimate)
 - [x] Dashboard scaffolded (Next.js 14, shadcn/ui, dark theme)
+- [x] Security wrapper implemented (allowlist, rate limiting, audit, secret redaction)
 
 ## What's Next
 
@@ -61,3 +63,6 @@
 - Pages: Dashboard, Containers, History, Settings
 - All components with mock data, ready for backend integration
 - Working from laptop (no GPU tasks)
+- Security wrapper implemented: allowlist (frozenset), rate limiting, audit logging, secret redaction
+- 30/30 tests passing, demo_security.py exercising all boundaries
+- Path traversal attacks blocked (../../etc/passwd denied)
