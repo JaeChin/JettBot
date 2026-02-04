@@ -1,6 +1,6 @@
 # Jett Project State
 
-> Last updated: 2025-02-03
+> Last updated: 2025-02-04
 > Updated by: Opus
 
 ---
@@ -33,6 +33,7 @@
 - [x] faster-whisper STT with CUDA acceleration
 - [x] CUDA dependencies resolved (nvidia-cublas-cu12, nvidia-cudnn-cu12)
 - [x] STT VRAM verified: 1.1GB (better than 1.5GB estimate)
+- [x] Dashboard scaffolded (Next.js 14, shadcn/ui, dark theme)
 
 ## What's Next
 
@@ -51,3 +52,12 @@
 - Target hardware: RTX 3070 (8 GB VRAM)
 - All models must fit within VRAM budget (see `vram_budget.md`)
 - Privacy-first: audio never leaves local machine
+
+## Session Log
+
+### 2025-02-04
+- Dashboard scaffolded: Next.js 14 + shadcn/ui + Tailwind v4
+- Dark theme with cyan accent
+- Pages: Dashboard, Containers, History, Settings
+- All components with mock data, ready for backend integration
+- Working from laptop (no GPU tasks)
