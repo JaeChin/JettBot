@@ -17,10 +17,10 @@
 | faster-whisper STT setup | ✅ Complete | CUDA working, 1.1GB VRAM, 755ms/3s audio |
 | Security wrapper | ✅ Complete | Allowlist, rate limiting, audit logging, 30/30 tests |
 | VPS docker-compose | ✅ Complete | Hardened, WireGuard-bound, 4 services |
-| Ollama + Qwen3 8B installation | ⬜ Not started | Next up (needs GPU) |
-| Kokoro-82M TTS integration | ⬜ Not started | Needs GPU |
-| End-to-end voice test | ⬜ Not started | Needs GPU |
-| VRAM validation | 🟡 In progress | STT verified, LLM/TTS pending |
+| Ollama + Qwen3 8B installation | ✅ Complete | 5.8GB VRAM (ctx=2048), 68 tok/s |
+| Kokoro-82M TTS integration | ⬜ Not started | Next up |
+| End-to-end voice test | ⬜ Not started | After TTS |
+| VRAM validation | 🟡 In progress | STT + LLM verified, TTS pending |
 
 ## What's Done
 
@@ -39,14 +39,17 @@
 - [x] Security wrapper implemented (allowlist, rate limiting, audit, secret redaction)
 - [x] VPS docker-compose created (n8n, postgres, qdrant, portainer)
 - [x] Container hardening applied (non-root, read-only, dropped caps, WireGuard-only)
+- [x] Ollama installed and configured (v0.15.4)
+- [x] Qwen3 8B Q4_K_M pulled and benchmarked
+- [x] Custom jett-qwen3 model created (optimized 2048 context for VRAM savings)
+- [x] LLM VRAM verified: 5.8GB (with ctx=2048), 68 tok/s inference
+- [x] LLM benchmark created (benchmarks/llm_benchmark.py)
 
 ## What's Next
 
-1. **Install Ollama** — Local LLM runtime
-2. **Pull Qwen3 8B** — Q4_K_M quantization, verify 4.5GB VRAM
-3. **Integrate Kokoro-82M TTS** — Verify 0.2GB VRAM
-4. **VRAM validation** — All three models loaded simultaneously
-5. **End-to-end voice test** — Mic → STT → LLM → TTS → Speaker
+1. **Integrate Kokoro-82M TTS** — Verify 0.2GB VRAM
+2. **VRAM validation** — All three models loaded simultaneously (~7.1GB projected)
+3. **End-to-end voice test** — Mic → STT → LLM → TTS → Speaker
 
 ## Blockers
 
@@ -78,8 +81,15 @@
   - Full security hardening: non-root, read-only, dropped caps
   - n8n wired to PostgreSQL backend
 
-Next session (GPU):
-- Install Ollama + pull Qwen3 8B
-- Test LLM inference, measure VRAM
-- Install Kokoro-82M TTS
-- Wire STT → LLM → TTS for end-to-end test
+### 2026-02-04 (Desktop — RTX 3070)
+- Ollama already installed (v0.15.4), Qwen3 8B already pulled
+- Ran LLM benchmark: 68 tok/s, tool-calling format works
+- **VRAM issue discovered**: Default Qwen3 8B uses 6.3GB (not 4.5GB as estimated)
+- Created custom `jett-qwen3` model with ctx=2048 to save VRAM
+- Final LLM VRAM: 5.8GB (ctx=2048), leaving room for STT + TTS
+- Updated VRAM budget with actual measurements
+
+Next up:
+- Integrate Kokoro-82M TTS
+- Load all three models simultaneously for VRAM validation
+- End-to-end voice test

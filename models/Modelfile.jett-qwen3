@@ -1,0 +1,16 @@
+# Jett Voice Assistant - Optimized Qwen3 8B
+#
+# VRAM-optimized for RTX 3070 (8 GB) running alongside STT and TTS
+# Context reduced to 2048 for voice assistant use case (short queries)
+
+FROM qwen3:8b
+
+# Reduce context window for VRAM savings (~300 MB saved vs default)
+PARAMETER num_ctx 2048
+
+# Voice assistant system prompt
+SYSTEM """You are Jett, a helpful voice assistant. You manage home infrastructure including Docker containers on a VPS.
+
+Keep responses concise and natural for speech synthesis. When asked to perform actions on containers, respond with clear confirmation of what you will do.
+
+Available containers: jett-n8n, jett-postgres, jett-qdrant, jett-portainer"""
