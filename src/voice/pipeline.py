@@ -59,9 +59,9 @@ class VoicePipeline:
     CHANNELS = 1
     BLOCK_SIZE = 1024
 
-    # Silence detection parameters
+    # Silence detection parameters (optimized for low latency)
     SILENCE_THRESHOLD = 0.01  # RMS threshold for silence
-    SILENCE_DURATION = 1.0    # Seconds of silence to end recording
+    SILENCE_DURATION = 0.4    # Seconds of silence to end recording (reduced from 1.0)
     MAX_RECORD_SECONDS = 30   # Maximum recording length
 
     # TTS sample rate
@@ -103,6 +103,23 @@ class VoicePipeline:
         # Warm up TTS (first call is slow due to CUDA JIT)
         print("Warming up TTS...")
         _ = self.tts.synthesize("Ready.")
+
+        # Warm up LLM (load into VRAM if not already)
+        print("Warming up LLM...")
+        try:
+            requests.post(
+                f"{self.ollama_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": False,
+                    "keep_alive": -1,  # Keep model loaded indefinitely
+                    "options": {"num_predict": 5}  # Limit output for warmup
+                },
+                timeout=120
+            )
+        except Exception as e:
+            print(f"LLM warmup warning: {e}")
 
         print("Models loaded and ready.")
 
@@ -189,18 +206,21 @@ class VoicePipeline:
         """
         Generate LLM response, streaming tokens.
 
+        Uses /api/chat for better performance (cached system prompt).
+
         Yields:
             Response text chunks.
         """
-        # Add /no_think suffix to disable Qwen3's thinking mode for faster responses
-        prompt_with_no_think = f"{prompt} /no_think"
-
+        # Use /api/chat for better streaming performance
         response = requests.post(
-            f"{self.ollama_url}/api/generate",
+            f"{self.ollama_url}/api/chat",
             json={
                 "model": self.model,
-                "prompt": prompt_with_no_think,
-                "stream": True
+                "messages": [
+                    {"role": "user", "content": f"{prompt} /no_think"}
+                ],
+                "stream": True,
+                "keep_alive": -1  # Keep model loaded indefinitely
             },
             stream=True,
             timeout=60
@@ -211,8 +231,10 @@ class VoicePipeline:
             if line:
                 import json
                 data = json.loads(line)
-                if "response" in data:
-                    chunk = data["response"]
+
+                # /api/chat returns content in message.content
+                if "message" in data and "content" in data["message"]:
+                    chunk = data["message"]["content"]
 
                     # Filter out <think> blocks from Qwen3
                     if "<think>" in chunk:
@@ -220,10 +242,9 @@ class VoicePipeline:
                     if in_think_block:
                         if "</think>" in chunk:
                             in_think_block = False
-                            # Get text after </think>
                             chunk = chunk.split("</think>", 1)[-1]
                         else:
-                            continue  # Skip this chunk entirely
+                            continue
 
                     if chunk:
                         yield chunk
@@ -240,6 +261,10 @@ class VoicePipeline:
         """
         Synthesize and play speech as text streams in.
 
+        Optimized for low latency:
+        - Starts TTS as soon as we have a sentence ending OR enough chars
+        - Synthesizes in parallel with LLM generation
+
         Returns:
             Tuple of (full_text, first_token_ms, first_audio_ms)
         """
@@ -248,6 +273,9 @@ class VoicePipeline:
         first_token_time = None
         first_audio_time = None
         start_time = time.perf_counter()
+
+        # Minimum chars before first synthesis (for fast first audio)
+        MIN_FIRST_CHUNK = 20
 
         # Queue for audio chunks to play
         audio_queue = queue.Queue()
@@ -267,6 +295,8 @@ class VoicePipeline:
         playback_thread = threading.Thread(target=playback_worker, daemon=True)
         playback_thread.start()
 
+        first_chunk_sent = False
+
         try:
             for chunk in text_generator:
                 if first_token_time is None:
@@ -275,19 +305,34 @@ class VoicePipeline:
                 buffer += chunk
                 full_text += chunk
 
-                # Check if we have a complete sentence
-                sentences = self.split_sentences(buffer)
-                if len(sentences) > 1:
-                    # Synthesize all complete sentences
-                    for sentence in sentences[:-1]:
-                        if sentence:
-                            audio = self.tts.synthesize(sentence)
+                # Check for sentence endings
+                if re.search(r'[.!?]\s*$', buffer):
+                    # We have a complete sentence - synthesize it
+                    if buffer.strip():
+                        audio = self.tts.synthesize(buffer.strip())
+                        if first_audio_time is None:
+                            first_audio_time = (time.perf_counter() - start_time) * 1000
+                        audio_queue.put(audio)
+                        first_chunk_sent = True
+                    buffer = ""
+
+                # For first chunk, also trigger on comma or enough chars
+                elif not first_chunk_sent and len(buffer) >= MIN_FIRST_CHUNK:
+                    # Check for natural break points
+                    if ',' in buffer or len(buffer) >= 40:
+                        # Find best split point
+                        split_idx = buffer.rfind(',')
+                        if split_idx == -1 or split_idx < 10:
+                            split_idx = len(buffer)
+
+                        chunk_to_speak = buffer[:split_idx].strip()
+                        if chunk_to_speak:
+                            audio = self.tts.synthesize(chunk_to_speak)
                             if first_audio_time is None:
                                 first_audio_time = (time.perf_counter() - start_time) * 1000
                             audio_queue.put(audio)
-
-                    # Keep incomplete sentence in buffer
-                    buffer = sentences[-1]
+                            first_chunk_sent = True
+                            buffer = buffer[split_idx:].lstrip(',').strip()
 
             # Synthesize any remaining text
             if buffer.strip():

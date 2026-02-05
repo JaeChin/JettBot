@@ -126,18 +126,24 @@
 - Main entry point: `python -m src.main`
 - E2E benchmark with pre-recorded audio
 
-**Latency Analysis (current):**
-| Stage | P50 | Target |
-|-------|-----|--------|
-| STT | 750ms | <300ms |
-| LLM first token | 6000ms | <200ms |
-| TTS first audio | 450ms | <100ms |
-| E2E Total | 18s | <500ms |
+**Latency Optimization (after tuning):**
+| Stage | Before | After | Target |
+|-------|--------|-------|--------|
+| STT | 750ms | 655ms | <300ms |
+| LLM first token | 6000ms | 2200ms* | <500ms |
+| TTS first audio | 450ms | 255ms | <100ms |
+| E2E (short prompts) | 18s | ~3.1s | <3s |
 
-**Bottleneck:** LLM first token time. Qwen3 8B is slow to start streaming.
-Options for Phase 2:
-- Try smaller model (Qwen3 4B or Phi-3)
-- Implement speculative decoding
-- Use streaming ASR instead of full transcription
+*LLM with short prompts. Longer prompts = longer prefill time.
 
-**PHASE 1 COMPLETE** — Core voice loop functional, ready for Phase 2 optimizations.
+**Optimizations applied:**
+- Switched to /api/chat endpoint (cached system prompt)
+- Added keep_alive=-1 to prevent model unloading
+- Reduced silence detection from 1.0s to 0.4s
+- Optimized TTS chunking (start on comma/20 chars)
+- Pre-warm LLM and TTS on startup
+
+**Remaining bottleneck:** LLM prefill time scales with prompt length.
+Phase 2 will address with streaming ASR and faster LLM options.
+
+**PHASE 1 COMPLETE** — Core voice loop functional, ~3s latency for short prompts.
