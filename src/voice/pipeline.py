@@ -60,9 +60,9 @@ class VoicePipeline:
     BLOCK_SIZE = 1024
 
     # Silence detection parameters (optimized for low latency)
-    SILENCE_THRESHOLD = 0.01  # RMS threshold for silence
-    SILENCE_DURATION = 0.4    # Seconds of silence to end recording (reduced from 1.0)
-    MAX_RECORD_SECONDS = 30   # Maximum recording length
+    SILENCE_THRESHOLD = 0.005  # RMS threshold for silence (lowered for quiet mics)
+    SILENCE_DURATION = 0.5     # Seconds of silence to end recording
+    MAX_RECORD_SECONDS = 30    # Maximum recording length
 
     # TTS sample rate
     TTS_SAMPLE_RATE = 24000

@@ -84,6 +84,7 @@ class STT:
 
         segments, info = self.model.transcribe(
             audio_path,
+            language="en",  # Force English to skip language detection (faster + avoids errors)
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500}
         )
