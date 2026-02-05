@@ -7,7 +7,10 @@
 
 ## Current Phase
 
-**Phase 1: Core Voice Loop — IN PROGRESS**
+**Phase 1: Core Voice Loop — COMPLETE**
+
+> Phase 1 milestone achieved: End-to-end voice pipeline works (Mic → STT → LLM → TTS → Speaker).
+> Latency is above target but functional. Phase 2 will focus on optimization.
 
 ## Phase Progress
 
@@ -20,7 +23,7 @@
 | Ollama + Qwen3 8B installation | ✅ Complete | 5.28GB VRAM (ctx=2048), 68 tok/s |
 | Kokoro-82M TTS integration | ✅ Complete | 0.36GB VRAM, 83-136ms latency |
 | VRAM validation | ✅ Complete | 7.38GB total (90.1%), 0.81GB headroom |
-| End-to-end voice test | ⬜ Not started | Next up |
+| End-to-end voice test | ✅ Complete | Pipeline works, latency ~18s E2E |
 
 ## What's Done
 
@@ -52,12 +55,15 @@
 - [x] **FULL VRAM VALIDATION PASSED**: All 3 models concurrent = 7.38GB (90.1%)
 - [x] VRAM validation script (benchmarks/vram_validation.py)
 - [x] Sample TTS audio files saved (tests/fixtures/tts_*.wav)
+- [x] **E2E Voice Pipeline** (src/voice/pipeline.py) — STT → LLM → TTS working
+- [x] Main entry point (src/main.py) — `python -m src.main`
+- [x] E2E benchmark (benchmarks/e2e_benchmark.py)
 
-## What's Next
+## What's Next (Phase 2)
 
-1. **End-to-end voice test** — Mic → STT → LLM → TTS → Speaker
-2. **Wake word detection** — openWakeWord integration
-3. **Voice Activity Detection** — Silero VAD
+1. **Wake word detection** — openWakeWord integration
+2. **Voice Activity Detection** — Silero VAD (replace simple silence detection)
+3. **Latency optimization** — Streaming ASR, smaller/faster LLM options
 
 ## Blockers
 
@@ -110,7 +116,28 @@
   - Headroom: 0.81GB
 - Sample audio saved to tests/fixtures/
 
-Next up:
-- End-to-end voice test (Mic → STT → LLM → TTS → Speaker)
-- Wake word detection (openWakeWord)
-- Voice Activity Detection (Silero VAD)
+**E2E Voice Pipeline Complete:**
+- Created VoicePipeline class (src/voice/pipeline.py)
+  - Mic input with silence-based speech detection
+  - STT transcription (faster-whisper)
+  - LLM response generation (Ollama streaming)
+  - TTS synthesis sentence-by-sentence
+  - Speaker playback with threading
+- Main entry point: `python -m src.main`
+- E2E benchmark with pre-recorded audio
+
+**Latency Analysis (current):**
+| Stage | P50 | Target |
+|-------|-----|--------|
+| STT | 750ms | <300ms |
+| LLM first token | 6000ms | <200ms |
+| TTS first audio | 450ms | <100ms |
+| E2E Total | 18s | <500ms |
+
+**Bottleneck:** LLM first token time. Qwen3 8B is slow to start streaming.
+Options for Phase 2:
+- Try smaller model (Qwen3 4B or Phi-3)
+- Implement speculative decoding
+- Use streaming ASR instead of full transcription
+
+**PHASE 1 COMPLETE** — Core voice loop functional, ready for Phase 2 optimizations.
