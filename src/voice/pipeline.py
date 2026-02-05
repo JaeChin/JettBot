@@ -24,6 +24,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 from typing import Generator, Optional
 
@@ -34,6 +35,13 @@ import soundfile as sf
 
 # Suppress warnings
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+
+class PipelineState(Enum):
+    """State machine for voice pipeline to prevent feedback loops."""
+    LISTENING = auto()    # Recording from mic, waiting for speech
+    PROCESSING = auto()   # STT + LLM generation (mic ignored)
+    SPEAKING = auto()     # TTS playback (mic ignored)
 
 
 @dataclass
@@ -85,6 +93,7 @@ class VoicePipeline:
         self.tts = None
         self._running = False
         self._audio_queue = queue.Queue()
+        self._state = PipelineState.LISTENING
 
     def load_models(self) -> None:
         """Load STT and TTS models."""
@@ -282,11 +291,13 @@ class VoicePipeline:
         playback_done = threading.Event()
 
         def playback_worker():
-            """Play audio chunks from queue."""
+            """Play audio chunks from queue. Sets state to SPEAKING during playback."""
             while True:
                 item = audio_queue.get()
                 if item is None:  # Sentinel to stop
                     break
+                # Set state to SPEAKING to mute mic during playback
+                self._state = PipelineState.SPEAKING
                 sd.play(item, self.TTS_SAMPLE_RATE)
                 sd.wait()
             playback_done.set()
@@ -398,20 +409,38 @@ class VoicePipeline:
         print()
 
     def run(self) -> None:
-        """Run the voice pipeline in a loop."""
+        """
+        Run the voice pipeline in a loop.
+
+        State machine to prevent feedback loops:
+        LISTENING → (speech detected) → PROCESSING → (LLM done) → SPEAKING → (audio done) → LISTENING
+
+        Mic input is only recorded during LISTENING state.
+        """
         if self.stt is None or self.tts is None:
             self.load_models()
 
         self._running = True
+        self._state = PipelineState.LISTENING
         print("\nJett is listening... (Ctrl+C to exit)\n")
 
         try:
             while self._running:
+                # Only record when in LISTENING state
+                if self._state != PipelineState.LISTENING:
+                    time.sleep(0.1)
+                    continue
+
                 # Record audio
                 audio = self.record_audio()
 
                 if audio is None:
                     continue
+
+                # Transition to PROCESSING (mic now ignored)
+                self._state = PipelineState.PROCESSING
+                if self.debug:
+                    print("[State: PROCESSING]")
 
                 # Process through pipeline
                 try:
@@ -427,7 +456,12 @@ class VoicePipeline:
                     if self.debug:
                         import traceback
                         traceback.print_exc()
-                    continue
+
+                finally:
+                    # Always return to LISTENING state
+                    self._state = PipelineState.LISTENING
+                    if self.debug:
+                        print("[State: LISTENING]")
 
         except KeyboardInterrupt:
             print("\n\nShutting down...")
