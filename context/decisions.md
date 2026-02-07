@@ -179,3 +179,34 @@
 
 **Interview Framing**:
 > "Nothing is exposed on the public interface. You'd have to compromise the WireGuard tunnel first, which requires the private key. Even if someone misconfigures the firewall, the services simply aren't listening on the public IP."
+
+---
+
+## ADR-009: Disable LLM Thinking Mode for Voice
+
+**Status**: Accepted
+**Date**: 2026-02-07
+
+**Context**: Qwen3's chain-of-thought thinking mode adds ~1.5s and ~80 tokens of overhead per response. Voice assistant queries are predominantly simple commands.
+
+**Options Considered**:
+1. Keep thinking enabled — better reasoning, slower responses
+2. Disable thinking — faster responses, slightly less reasoning depth
+3. Conditional — think for complex queries only
+
+**Decision**: Disable thinking mode (`think: false`) for all voice interactions.
+
+**Rationale**:
+- Voice assistants need speed over depth — 1.5s is significant when total perceived latency is 3.2s
+- Most voice queries are simple commands where thinking provides no benefit
+- Complex queries route to Claude via hybrid routing anyway
+- Reduces wasted tokens (80 think tokens = ~1s generation time at 68 tok/s)
+
+**Consequences**:
+- Pro: 1.5s faster response time (4s → 2.15s first token)
+- Pro: 80 fewer tokens per response — less GPU compute, lower power
+- Con: May give worse answers on complex reasoning questions
+- Mitigated: Complex queries route to Claude API via the hybrid router
+
+**Interview Framing**:
+> "I disabled the model's chain-of-thought for voice interactions because latency matters more than reasoning depth for simple commands. Complex queries route to Claude via hybrid routing, so local inference optimizes for speed."

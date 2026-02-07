@@ -1,7 +1,7 @@
 # Jett VRAM Budget
 
 > Two-environment model: Development (desktop) + Production (laptop appliance)
-> Last updated: 2025-02-04 by Opus
+> Last updated: 2026-02-07 by Opus
 
 ---
 
@@ -130,12 +130,12 @@ This is by design. The production environment leans more on the hybrid router, w
 
 ## Validation Checkpoints
 
-### Development Environment (Desktop)
-- [ ] STT loaded — VRAM: ___ MB
-- [ ] LLM (Qwen3 8B) loaded — VRAM: ___ MB
-- [ ] TTS loaded — VRAM: ___ MB
-- [ ] All three simultaneous — VRAM: ___ MB
-- [ ] Under 8 GB confirmed: YES / NO
+### Development Environment (Desktop) — VALIDATED ✅
+- [x] STT loaded — VRAM: 1080 MB
+- [x] LLM (Qwen3 8B) loaded — VRAM: 5280 MB
+- [x] TTS loaded — VRAM: 360 MB
+- [x] All three simultaneous — VRAM: 7380 MB
+- [x] Under 8 GB confirmed: YES (0.81 GB headroom)
 
 ### Production Environment (Laptop)
 - [ ] STT loaded — VRAM: ___ MB

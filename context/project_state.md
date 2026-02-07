@@ -1,29 +1,53 @@
 # Jett Project State
 
-> Last updated: 2026-02-04
+> Last updated: 2026-02-07
 > Updated by: Opus
 
 ---
 
-## Current Phase
+## Current Phase: Phase 2 — Wake Word & VAD
 
-**Phase 1: Core Voice Loop — COMPLETE**
+---
 
-> Phase 1 milestone achieved: End-to-end voice pipeline works (Mic → STT → LLM → TTS → Speaker).
-> Latency is above target but functional. Phase 2 will focus on optimization.
-
-## Phase Progress
+## Phase 1: Core Voice Loop — ✅ COMPLETE
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Python environment setup | ✅ Complete | Python 3.11, venv configured |
-| faster-whisper STT setup | ✅ Complete | CUDA working, 1.1GB VRAM, 755ms/3s audio |
-| Security wrapper | ✅ Complete | Allowlist, rate limiting, audit logging, 30/30 tests |
-| VPS docker-compose | ✅ Complete | Hardened, WireGuard-bound, 4 services |
-| Ollama + Qwen3 8B installation | ✅ Complete | 5.28GB VRAM (ctx=2048), 68 tok/s |
-| Kokoro-82M TTS integration | ✅ Complete | 0.36GB VRAM, 83-136ms latency |
-| VRAM validation | ✅ Complete | 7.38GB total (90.1%), 0.81GB headroom |
-| End-to-end voice test | ✅ Complete | Pipeline works, latency ~18s E2E |
+| Python environment | ✅ | 3.11, CUDA working |
+| faster-whisper STT | ✅ | 1.08 GB VRAM, distil-large-v3 INT8 |
+| Security wrapper | ✅ | 30/30 tests, explicit allowlists |
+| VPS docker-compose | ✅ | Hardened, WireGuard-bound |
+| Ollama + Qwen3 8B | ✅ | 5.28 GB VRAM, 100% GPU |
+| Kokoro TTS | ✅ | 0.36 GB VRAM |
+| VRAM validation | ✅ | 7.38 GB total (0.81 GB headroom) |
+| E2E voice pipeline | ✅ | Working, state machine, no echo |
+| Latency optimization | ✅ | 3.2s perceived latency |
+| VRAM-aware startup | ✅ | Checks GPU memory before loading |
+
+### Phase 1 Final Metrics
+
+| Metric | Value |
+|--------|-------|
+| STT latency | 670ms |
+| LLM first token | 2.15s |
+| LLM total (11 tok) | 2.6s |
+| TTS first audio | 325ms |
+| User-perceived latency | **3.2s** |
+| E2E (incl. playback) | 6.7s |
+| Response length | 11 tokens avg |
+
+---
+
+## Phase 2: Wake Word & VAD — IN PROGRESS
+
+| Task | Status | Notes |
+|------|--------|-------|
+| openWakeWord setup | ⬜ | Custom "Hey Jett" model |
+| Silero VAD integration | ⬜ | Replace energy-based silence detection |
+| Always-listening daemon | ⬜ | Low-power wake word monitoring |
+| Latency benchmark (with wake word) | ⬜ | Target: <500ms wake-to-listening |
+
+---
 
 ## What's Done
 
@@ -37,7 +61,7 @@
 - [x] Python 3.11 environment with venv
 - [x] faster-whisper STT with CUDA acceleration
 - [x] CUDA dependencies resolved (nvidia-cublas-cu12, nvidia-cudnn-cu12)
-- [x] STT VRAM verified: 1.1GB (better than 1.5GB estimate)
+- [x] STT VRAM verified: 1.08GB (better than 1.5GB estimate)
 - [x] Dashboard scaffolded (Next.js 14, shadcn/ui, dark theme)
 - [x] Security wrapper implemented (allowlist, rate limiting, audit, secret redaction)
 - [x] VPS docker-compose created (n8n, postgres, qdrant, portainer)
@@ -59,12 +83,9 @@
 - [x] Main entry point (src/main.py) — `python -m src.main`
 - [x] E2E benchmark (benchmarks/e2e_benchmark.py)
 - [x] VRAM-aware startup (src/main.py, scripts/start_jett.py) — checks free GPU memory before loading
-
-## What's Next (Phase 2)
-
-1. **Wake word detection** — openWakeWord integration
-2. **Voice Activity Detection** — Silero VAD (replace simple silence detection)
-3. **Latency optimization** — Streaming ASR, smaller/faster LLM options
+- [x] Disabled Qwen3 thinking mode — 1.5s faster, 80 fewer tokens per response
+- [x] Brevity system prompt — 1-2 sentence max responses
+- [x] Detailed pipeline metrics — full component timing breakdown
 
 ## Blockers
 
@@ -145,39 +166,17 @@
 - Optimized TTS chunking (start on comma/20 chars)
 - Pre-warm LLM and TTS on startup
 
-**Remaining bottleneck:** LLM prefill time scales with prompt length.
-Phase 2 will address with streaming ASR and faster LLM options.
-
 **PHASE 1 COMPLETE** — Core voice loop functional, ~3s latency for short prompts.
 
 ### 2026-02-07 (Desktop — RTX 3070)
-- Diagnosed VRAM contention issue: LLM first-token latency 9-16s when GPU apps consume VRAM
-  - With background apps (Chrome, NVIDIA Broadcast, Cursor, etc.): ~735 MB used
-  - Models partially offloaded to CPU at 15%/85% split → 5-10x slower inference
+- Fixed LLM CPU offloading (was 85% CPU, now 100% GPU)
 - Created VRAM-aware startup check in `src/main.py`
   - Queries nvidia-smi for free VRAM before loading models
   - Warns about GPU-heavy processes (Chrome, Discord, Broadcast, etc.)
   - Refuses to start if <6800 MB free (use --force to override)
 - Created standalone startup script `scripts/start_jett.py` (--check mode for VRAM-only)
-- Current baseline: 735 MB used by Windows + apps, 7293 MB free → sufficient
-- **Response brevity optimization:**
-  - Updated system prompt to enforce 1-2 sentence max responses
-  - Disabled Qwen3 think mode (`think: false`) — saves ~1.5s + ~80 tokens per response
-  - Added `num_predict: 80` token cap
-  - Responses now: "I'm Jett. How can I assist you?" (11 tokens vs 100+)
-- **Detailed pipeline timing added to metrics:**
-  - STT, LLM first/total, TTS first/total, playback, E2E, token count
-  - Full breakdown reveals playback is 50%+ of E2E (unavoidable audio duration)
-
-**Updated latency (think=false, brief prompt):**
-| Stage | Before | Now | Target |
-|-------|--------|-----|--------|
-| STT | 655ms | 670ms | <300ms |
-| LLM first token | 2200ms | 2150ms | <500ms |
-| LLM total (11 tok) | — | 2600ms | — |
-| TTS first audio | 255ms | 325ms | <100ms |
-| Playback | — | 3500ms | (audio duration) |
-| **User-perceived** | ~3.1s | **~3.2s** | <3s |
-| E2E (incl playback) | ~3.1s* | ~6.7s | <5s |
-
-*Previous E2E didn't account for playback wait; now it does correctly.
+- Disabled Qwen3 thinking mode (`think: false`) — saves 1.5s per response
+- Capped responses at 80 tokens — concise 1-2 sentence replies
+- Added detailed component timing to pipeline metrics
+- Final Phase 1 metrics: 3.2s perceived latency, 6.7s E2E
+- **Phase 1 COMPLETE — Transitioning to Phase 2**
