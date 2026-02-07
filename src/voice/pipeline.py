@@ -16,6 +16,7 @@ Usage:
 """
 
 import io
+import json
 import os
 import queue
 import re
@@ -49,8 +50,12 @@ class PipelineMetrics:
     """Timing metrics for a single interaction."""
     stt_ms: float = 0.0
     llm_first_token_ms: float = 0.0
+    llm_total_ms: float = 0.0
     tts_first_audio_ms: float = 0.0
+    tts_total_ms: float = 0.0
+    playback_ms: float = 0.0
     e2e_ms: float = 0.0
+    token_count: int = 0
     user_text: str = ""
     jett_text: str = ""
 
@@ -226,35 +231,25 @@ class VoicePipeline:
             json={
                 "model": self.model,
                 "messages": [
-                    {"role": "user", "content": f"{prompt} /no_think"}
+                    {"role": "user", "content": prompt}
                 ],
                 "stream": True,
-                "keep_alive": -1  # Keep model loaded indefinitely
+                "keep_alive": -1,  # Keep model loaded indefinitely
+                "think": False,    # Disable Qwen3 thinking (saves ~1.5s + ~80 tokens)
+                "options": {
+                    "num_predict": 80,  # 1-2 sentences without think overhead
+                }
             },
             stream=True,
             timeout=60
         )
 
-        in_think_block = False
         for line in response.iter_lines():
             if line:
-                import json
                 data = json.loads(line)
 
-                # /api/chat returns content in message.content
                 if "message" in data and "content" in data["message"]:
                     chunk = data["message"]["content"]
-
-                    # Filter out <think> blocks from Qwen3
-                    if "<think>" in chunk:
-                        in_think_block = True
-                    if in_think_block:
-                        if "</think>" in chunk:
-                            in_think_block = False
-                            chunk = chunk.split("</think>", 1)[-1]
-                        else:
-                            continue
-
                     if chunk:
                         yield chunk
                 if data.get("done", False):
@@ -266,7 +261,7 @@ class VoicePipeline:
         sentences = re.split(r'(?<=[.!?])\s+', text)
         return [s.strip() for s in sentences if s.strip()]
 
-    def speak_streaming(self, text_generator: Generator[str, None, None]) -> tuple[str, float, float]:
+    def speak_streaming(self, text_generator: Generator[str, None, None]) -> dict:
         """
         Synthesize and play speech as text streams in.
 
@@ -275,13 +270,16 @@ class VoicePipeline:
         - Synthesizes in parallel with LLM generation
 
         Returns:
-            Tuple of (full_text, first_token_ms, first_audio_ms)
+            Dict with full_text, first_token_ms, first_audio_ms,
+            llm_total_ms, tts_total_ms, playback_ms, token_count.
         """
         buffer = ""
         full_text = ""
         first_token_time = None
         first_audio_time = None
         start_time = time.perf_counter()
+        tts_total_ms = 0.0
+        token_count = 0
 
         # Minimum chars before first synthesis (for fast first audio)
         MIN_FIRST_CHUNK = 20
@@ -289,8 +287,10 @@ class VoicePipeline:
         # Queue for audio chunks to play
         audio_queue = queue.Queue()
         playback_done = threading.Event()
+        playback_total_ms = 0.0
 
         def playback_worker():
+            nonlocal playback_total_ms
             """Play audio chunks from queue. Sets state to SPEAKING during playback."""
             while True:
                 item = audio_queue.get()
@@ -298,8 +298,10 @@ class VoicePipeline:
                     break
                 # Set state to SPEAKING to mute mic during playback
                 self._state = PipelineState.SPEAKING
+                play_start = time.perf_counter()
                 sd.play(item, self.TTS_SAMPLE_RATE)
                 sd.wait()
+                playback_total_ms += (time.perf_counter() - play_start) * 1000
             playback_done.set()
 
         # Start playback thread
@@ -307,9 +309,21 @@ class VoicePipeline:
         playback_thread.start()
 
         first_chunk_sent = False
+        llm_done_time = None
+
+        def _synthesize_chunk(text_to_speak: str):
+            nonlocal first_audio_time, tts_total_ms, first_chunk_sent
+            tts_start = time.perf_counter()
+            audio = self.tts.synthesize(text_to_speak)
+            tts_total_ms += (time.perf_counter() - tts_start) * 1000
+            if first_audio_time is None:
+                first_audio_time = (time.perf_counter() - start_time) * 1000
+            audio_queue.put(audio)
+            first_chunk_sent = True
 
         try:
             for chunk in text_generator:
+                token_count += 1
                 if first_token_time is None:
                     first_token_time = (time.perf_counter() - start_time) * 1000
 
@@ -318,50 +332,42 @@ class VoicePipeline:
 
                 # Check for sentence endings
                 if re.search(r'[.!?]\s*$', buffer):
-                    # We have a complete sentence - synthesize it
                     if buffer.strip():
-                        audio = self.tts.synthesize(buffer.strip())
-                        if first_audio_time is None:
-                            first_audio_time = (time.perf_counter() - start_time) * 1000
-                        audio_queue.put(audio)
-                        first_chunk_sent = True
+                        _synthesize_chunk(buffer.strip())
                     buffer = ""
 
                 # For first chunk, also trigger on comma or enough chars
                 elif not first_chunk_sent and len(buffer) >= MIN_FIRST_CHUNK:
-                    # Check for natural break points
                     if ',' in buffer or len(buffer) >= 40:
-                        # Find best split point
                         split_idx = buffer.rfind(',')
                         if split_idx == -1 or split_idx < 10:
                             split_idx = len(buffer)
 
                         chunk_to_speak = buffer[:split_idx].strip()
                         if chunk_to_speak:
-                            audio = self.tts.synthesize(chunk_to_speak)
-                            if first_audio_time is None:
-                                first_audio_time = (time.perf_counter() - start_time) * 1000
-                            audio_queue.put(audio)
-                            first_chunk_sent = True
+                            _synthesize_chunk(chunk_to_speak)
                             buffer = buffer[split_idx:].lstrip(',').strip()
+
+            llm_done_time = (time.perf_counter() - start_time) * 1000
 
             # Synthesize any remaining text
             if buffer.strip():
-                audio = self.tts.synthesize(buffer.strip())
-                if first_audio_time is None:
-                    first_audio_time = (time.perf_counter() - start_time) * 1000
-                audio_queue.put(audio)
+                _synthesize_chunk(buffer.strip())
 
         finally:
             # Signal playback to stop and wait
             audio_queue.put(None)
             playback_done.wait(timeout=30)
 
-        return (
-            full_text.strip(),
-            first_token_time or 0,
-            first_audio_time or 0
-        )
+        return {
+            "full_text": full_text.strip(),
+            "first_token_ms": first_token_time or 0,
+            "first_audio_ms": first_audio_time or 0,
+            "llm_total_ms": llm_done_time or 0,
+            "tts_total_ms": tts_total_ms,
+            "playback_ms": playback_total_ms,
+            "token_count": token_count,
+        }
 
     def process_query(self, audio: np.ndarray) -> PipelineMetrics:
         """
@@ -383,28 +389,33 @@ class VoicePipeline:
             return metrics
 
         # LLM + TTS (streaming)
-        llm_start = time.perf_counter()
         response_generator = self.generate_response(user_text)
+        result = self.speak_streaming(response_generator)
 
-        jett_text, first_token_ms, first_audio_ms = self.speak_streaming(response_generator)
-
-        metrics.llm_first_token_ms = first_token_ms
-        metrics.tts_first_audio_ms = first_audio_ms - first_token_ms if first_audio_ms > first_token_ms else first_audio_ms
-        metrics.jett_text = jett_text
+        metrics.llm_first_token_ms = result["first_token_ms"]
+        metrics.llm_total_ms = result["llm_total_ms"]
+        metrics.tts_first_audio_ms = result["first_audio_ms"] - result["first_token_ms"] if result["first_audio_ms"] > result["first_token_ms"] else result["first_audio_ms"]
+        metrics.tts_total_ms = result["tts_total_ms"]
+        metrics.playback_ms = result["playback_ms"]
+        metrics.token_count = result["token_count"]
+        metrics.jett_text = result["full_text"]
         metrics.e2e_ms = (time.perf_counter() - e2e_start) * 1000
 
         return metrics
 
     def print_metrics(self, metrics: PipelineMetrics) -> None:
-        """Print interaction metrics."""
+        """Print interaction metrics with full component breakdown."""
         print()
         print("--- Jett Pipeline ---")
-        print(f"  STT:          {metrics.stt_ms:.0f}ms")
-        print(f"  LLM (first):  {metrics.llm_first_token_ms:.0f}ms")
-        print(f"  TTS (first):  {metrics.tts_first_audio_ms:.0f}ms")
-        print(f"  E2E:          {metrics.e2e_ms:.0f}ms")
-        print(f"  User said:    \"{metrics.user_text}\"")
-        print(f"  Jett said:    \"{metrics.jett_text[:100]}{'...' if len(metrics.jett_text) > 100 else ''}\"")
+        print(f"  STT:            {metrics.stt_ms:>6.0f}ms")
+        print(f"  LLM first tok:  {metrics.llm_first_token_ms:>6.0f}ms")
+        print(f"  LLM total:      {metrics.llm_total_ms:>6.0f}ms  ({metrics.token_count} tokens)")
+        print(f"  TTS first:      {metrics.tts_first_audio_ms:>6.0f}ms")
+        print(f"  TTS total:      {metrics.tts_total_ms:>6.0f}ms")
+        print(f"  Playback:       {metrics.playback_ms:>6.0f}ms")
+        print(f"  E2E:            {metrics.e2e_ms:>6.0f}ms")
+        print(f"  User: \"{metrics.user_text}\"")
+        print(f"  Jett: \"{metrics.jett_text[:120]}{'...' if len(metrics.jett_text) > 120 else ''}\"")
         print("---------------------")
         print()
 

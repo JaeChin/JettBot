@@ -58,6 +58,7 @@
 - [x] **E2E Voice Pipeline** (src/voice/pipeline.py) — STT → LLM → TTS working
 - [x] Main entry point (src/main.py) — `python -m src.main`
 - [x] E2E benchmark (benchmarks/e2e_benchmark.py)
+- [x] VRAM-aware startup (src/main.py, scripts/start_jett.py) — checks free GPU memory before loading
 
 ## What's Next (Phase 2)
 
@@ -74,6 +75,7 @@
 - Target hardware: RTX 3070 (8 GB VRAM)
 - All models must fit within VRAM budget (see `vram_budget.md`)
 - Privacy-first: audio never leaves local machine
+- **VRAM contention**: Close GPU-heavy apps (Chrome, Discord, NVIDIA Broadcast) before running on dev machine. Models need ~6.8 GB free to load fully on GPU. Partial CPU offload causes 5-10x LLM latency.
 
 ## Session Log
 
@@ -147,3 +149,35 @@
 Phase 2 will address with streaming ASR and faster LLM options.
 
 **PHASE 1 COMPLETE** — Core voice loop functional, ~3s latency for short prompts.
+
+### 2026-02-07 (Desktop — RTX 3070)
+- Diagnosed VRAM contention issue: LLM first-token latency 9-16s when GPU apps consume VRAM
+  - With background apps (Chrome, NVIDIA Broadcast, Cursor, etc.): ~735 MB used
+  - Models partially offloaded to CPU at 15%/85% split → 5-10x slower inference
+- Created VRAM-aware startup check in `src/main.py`
+  - Queries nvidia-smi for free VRAM before loading models
+  - Warns about GPU-heavy processes (Chrome, Discord, Broadcast, etc.)
+  - Refuses to start if <6800 MB free (use --force to override)
+- Created standalone startup script `scripts/start_jett.py` (--check mode for VRAM-only)
+- Current baseline: 735 MB used by Windows + apps, 7293 MB free → sufficient
+- **Response brevity optimization:**
+  - Updated system prompt to enforce 1-2 sentence max responses
+  - Disabled Qwen3 think mode (`think: false`) — saves ~1.5s + ~80 tokens per response
+  - Added `num_predict: 80` token cap
+  - Responses now: "I'm Jett. How can I assist you?" (11 tokens vs 100+)
+- **Detailed pipeline timing added to metrics:**
+  - STT, LLM first/total, TTS first/total, playback, E2E, token count
+  - Full breakdown reveals playback is 50%+ of E2E (unavoidable audio duration)
+
+**Updated latency (think=false, brief prompt):**
+| Stage | Before | Now | Target |
+|-------|--------|-----|--------|
+| STT | 655ms | 670ms | <300ms |
+| LLM first token | 2200ms | 2150ms | <500ms |
+| LLM total (11 tok) | — | 2600ms | — |
+| TTS first audio | 255ms | 325ms | <100ms |
+| Playback | — | 3500ms | (audio duration) |
+| **User-perceived** | ~3.1s | **~3.2s** | <3s |
+| E2E (incl playback) | ~3.1s* | ~6.7s | <5s |
+
+*Previous E2E didn't account for playback wait; now it does correctly.

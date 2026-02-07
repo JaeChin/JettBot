@@ -31,6 +31,9 @@ Use this for prompt engineering, model comparison, benchmarking, and feature dev
 > **Note:** Qwen3 8B measured at 5.8 GB with 2048 context (not 4.5 GB as originally projected). Usable for development sessions but not suitable for 24/7 operation. Kill GPU-using background apps (browsers with HW accel, Discord overlay, etc.) before loading all models.
 
 ### Dev Environment Rules
+- **Close GPU-heavy apps before running Jett:** Chrome, Discord, NVIDIA Broadcast, OBS, Wallpaper Engine
+- The startup script (`python -m src.main`) checks VRAM automatically and warns about contention
+- If LLM first-token latency exceeds 3s, check `nvidia-smi` — partial CPU offload is the likely cause
 - Load models only during active development sessions
 - Unload when gaming or doing other GPU work
 - Use this environment for A/B testing local vs production model configs
