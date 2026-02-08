@@ -69,6 +69,7 @@ class WakeWordDetector:
         # Debug: throttle score printing to ~1 per second
         self._last_debug_print = 0.0
         self._debug_print_interval = 1.0
+        self._debug_audio_info_printed = False
 
     def _load_model(self) -> None:
         """Load the openWakeWord model."""
@@ -84,7 +85,8 @@ class WakeWordDetector:
         )
 
         if self.debug:
-            print(f"[WakeWord] Loaded model: {self.model_name}")
+            print(f"[Wake] Loaded model: {self.model_name}")
+            print(f"[Wake] Model keys: {list(self._model.models.keys())}")
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info, status) -> None:
         """Audio stream callback — feeds chunks to the wake word model."""
@@ -94,8 +96,15 @@ class WakeWordDetector:
         if self._model is None:
             return
 
-        # openWakeWord expects int16 or float32 numpy array
-        audio_chunk = indata[:, 0]  # mono
+        # Convert float32 [-1, 1] to int16 [-32768, 32767] — openWakeWord expects int16
+        audio_f32 = indata[:, 0]  # mono
+        audio_chunk = (audio_f32 * 32767).astype(np.int16)
+
+        # Debug: print audio format once on first callback
+        if self.debug and not self._debug_audio_info_printed:
+            self._debug_audio_info_printed = True
+            print(f"[Wake] Audio dtype={audio_chunk.dtype}, shape={audio_chunk.shape}, "
+                  f"min={audio_chunk.min()}, max={audio_chunk.max()}")
 
         # Run prediction
         prediction = self._model.predict(audio_chunk)
@@ -105,7 +114,7 @@ class WakeWordDetector:
             now = time.monotonic()
             if now - self._last_debug_print >= self._debug_print_interval:
                 self._last_debug_print = now
-                rms = float(np.sqrt(np.mean(audio_chunk ** 2)))
+                rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
                 scores = ", ".join(f"{k}: {v:.2f}" for k, v in prediction.items())
                 print(f"[Wake] {scores}  (rms={rms:.4f})")
 
@@ -191,3 +200,57 @@ class WakeWordDetector:
         self._active.set()
         if self.debug:
             print("[WakeWord] Resumed")
+
+
+if __name__ == "__main__":
+    # Standalone test — bypasses pipeline to isolate wake word detection
+    # Run: python src/voice/wake_word.py
+    import openwakeword
+    from openwakeword.model import Model
+
+    openwakeword.utils.download_models()
+    model = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
+
+    print(f"Model keys: {list(model.models.keys())}")
+    print(f"Model outputs: {model.model_outputs}")
+    print(f"Model inputs: {model.model_inputs}")
+
+    device_info = sd.query_devices(kind="input")
+    print(f"Audio device: {device_info['name']}")
+    print()
+
+    frame_count = 0
+    last_print = 0.0
+
+    def callback(indata, frames, time_info, status):
+        global frame_count, last_print
+        frame_count += 1
+        audio_f32 = indata[:, 0]
+        # Convert to int16 — openWakeWord expects int16 audio
+        audio_int16 = (audio_f32 * 32767).astype(np.int16)
+
+        prediction = model.predict(audio_int16)
+        score = prediction.get("hey_jarvis", 0)
+        rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
+
+        # Print every second OR when score is non-zero
+        now = time.monotonic()
+        if score > 0.001 or now - last_print >= 1.0:
+            last_print = now
+            buf_len = len(model.prediction_buffer.get("hey_jarvis", []))
+            buf_last3 = list(model.prediction_buffer.get("hey_jarvis", []))[-3:]
+            buf_str = ", ".join(f"{v:.4f}" for v in buf_last3)
+            marker = " <<<" if score > 0.5 else ""
+            print(f"  frame={frame_count:>5}  hey_jarvis={score:.4f}  "
+                  f"rms={rms:.4f}  buf[{buf_len}]=[{buf_str}]{marker}")
+
+    print("Listening... say 'Hey Jarvis'. Ctrl+C to stop.")
+    print("Prints every 1s, or immediately when score > 0.001")
+    print("-" * 65)
+    with sd.InputStream(samplerate=16000, channels=1, blocksize=1280,
+                        dtype="float32", callback=callback):
+        try:
+            while True:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nDone.")
