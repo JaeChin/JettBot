@@ -40,6 +40,7 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 class PipelineState(Enum):
     """State machine for voice pipeline to prevent feedback loops."""
+    WAITING = auto()      # Wake word detection active (low power)
     LISTENING = auto()    # Recording from mic, waiting for speech
     PROCESSING = auto()   # STT + LLM generation (mic ignored)
     SPEAKING = auto()     # TTS playback (mic ignored)
@@ -86,19 +87,42 @@ class VoicePipeline:
         model: str = "jett-qwen3",
         stt_model: str = "distil-large-v3",
         tts_voice: str = "af_heart",
-        debug: bool = False
+        debug: bool = False,
+        use_wake_word: bool = True,
     ):
         self.ollama_url = ollama_url
         self.model = model
         self.stt_model = stt_model
         self.tts_voice = tts_voice
         self.debug = debug
+        self.use_wake_word = use_wake_word
 
         self.stt = None
         self.tts = None
         self._running = False
         self._audio_queue = queue.Queue()
         self._state = PipelineState.LISTENING
+
+        # Wake word
+        self.wake_word_detector = None
+        self._wake_event = threading.Event()
+
+    def _init_wake_word(self) -> None:
+        """Initialize the wake word detector."""
+        from src.voice.wake_word import WakeWordDetector
+
+        print("Loading wake word model...")
+        self.wake_word_detector = WakeWordDetector(
+            model_name="hey_jarvis",
+            debug=self.debug,
+        )
+        # Eagerly load the model so startup latency is paid upfront
+        self.wake_word_detector._load_model()
+        print("Wake word model loaded.")
+
+    def _on_wake_detected(self) -> None:
+        """Callback invoked by WakeWordDetector when wake word is heard."""
+        self._wake_event.set()
 
     def load_models(self) -> None:
         """Load STT and TTS models."""
@@ -423,8 +447,11 @@ class VoicePipeline:
         """
         Run the voice pipeline in a loop.
 
-        State machine to prevent feedback loops:
-        LISTENING → (speech detected) → PROCESSING → (LLM done) → SPEAKING → (audio done) → LISTENING
+        With wake word (default):
+          WAITING → (wake detected) → LISTENING → PROCESSING → SPEAKING → WAITING
+
+        Without wake word (--no-wake):
+          LISTENING → PROCESSING → SPEAKING → LISTENING
 
         Mic input is only recorded during LISTENING state.
         """
@@ -432,11 +459,32 @@ class VoicePipeline:
             self.load_models()
 
         self._running = True
-        self._state = PipelineState.LISTENING
-        print("\nJett is listening... (Ctrl+C to exit)\n")
+
+        # Initialize wake word if enabled
+        if self.use_wake_word:
+            self._init_wake_word()
+            self.wake_word_detector.start(self._on_wake_detected)
+            self._state = PipelineState.WAITING
+            print("\nWaiting for wake word... (say \"Hey Jarvis\", Ctrl+C to exit)\n")
+        else:
+            self._state = PipelineState.LISTENING
+            print("\nJett is listening... (Ctrl+C to exit)\n")
 
         try:
             while self._running:
+                # Wake word mode: wait for trigger
+                if self._state == PipelineState.WAITING:
+                    # Block with timeout so KeyboardInterrupt can fire
+                    if self._wake_event.wait(timeout=0.5):
+                        self._wake_event.clear()
+                        # Pause wake word detection during interaction
+                        self.wake_word_detector.pause()
+                        self._state = PipelineState.LISTENING
+                        print("Wake word detected! Listening...")
+                        if self.debug:
+                            print("[State: LISTENING]")
+                    continue
+
                 # Only record when in LISTENING state
                 if self._state != PipelineState.LISTENING:
                     time.sleep(0.1)
@@ -446,6 +494,13 @@ class VoicePipeline:
                 audio = self.record_audio()
 
                 if audio is None:
+                    # No speech — return to appropriate state
+                    if self.use_wake_word:
+                        self.wake_word_detector.resume()
+                        self._state = PipelineState.WAITING
+                        print("Waiting for wake word...")
+                        if self.debug:
+                            print("[State: WAITING]")
                     continue
 
                 # Transition to PROCESSING (mic now ignored)
@@ -469,14 +524,23 @@ class VoicePipeline:
                         traceback.print_exc()
 
                 finally:
-                    # Always return to LISTENING state
-                    self._state = PipelineState.LISTENING
-                    if self.debug:
-                        print("[State: LISTENING]")
+                    if self.use_wake_word:
+                        # Resume wake word detection, return to WAITING
+                        self.wake_word_detector.resume()
+                        self._state = PipelineState.WAITING
+                        print("\nWaiting for wake word...")
+                        if self.debug:
+                            print("[State: WAITING]")
+                    else:
+                        self._state = PipelineState.LISTENING
+                        if self.debug:
+                            print("[State: LISTENING]")
 
         except KeyboardInterrupt:
             print("\n\nShutting down...")
             self._running = False
+            if self.wake_word_detector is not None:
+                self.wake_word_detector.stop()
 
     def process_file(self, audio_path: str) -> PipelineMetrics:
         """

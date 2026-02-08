@@ -42,7 +42,7 @@
 
 | Task | Status | Notes |
 |------|--------|-------|
-| openWakeWord setup | ⬜ | Custom "Hey Jett" model |
+| openWakeWord setup | ✅ | Using "hey_jarvis" built-in model, CPU-only |
 | Silero VAD integration | ⬜ | Replace energy-based silence detection |
 | Always-listening daemon | ⬜ | Low-power wake word monitoring |
 | Latency benchmark (with wake word) | ⬜ | Target: <500ms wake-to-listening |

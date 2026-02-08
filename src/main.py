@@ -19,8 +19,11 @@ Phase 1 Features:
     - Text-to-speech (Kokoro-82M)
     - Simple silence-based end-of-speech detection
 
-Coming in Phase 2:
-    - Wake word detection ("Hey Jett")
+Phase 2 Features:
+    - Wake word detection ("Hey Jett" via openWakeWord, CPU-only)
+    - --no-wake flag for always-listening mode
+
+Coming in Phase 3:
     - Voice Activity Detection (Silero VAD)
     - Hybrid routing (local + cloud LLM)
 """
@@ -183,6 +186,11 @@ def main():
         default=1.0,
         help="Seconds of silence to end recording (default: 1.0)"
     )
+    parser.add_argument(
+        "--no-wake",
+        action="store_true",
+        help="Disable wake word detection (always listening)"
+    )
     args = parser.parse_args()
 
     print()
@@ -210,7 +218,7 @@ def main():
     # Import and run pipeline
     from src.voice.pipeline import VoicePipeline
 
-    pipeline = VoicePipeline(debug=args.debug)
+    pipeline = VoicePipeline(debug=args.debug, use_wake_word=not args.no_wake)
     pipeline.SILENCE_THRESHOLD = args.silence_threshold
     pipeline.SILENCE_DURATION = args.silence_duration
 
