@@ -191,6 +191,11 @@ def main():
         action="store_true",
         help="Disable wake word detection (always listening)"
     )
+    parser.add_argument(
+        "--wake-debug",
+        action="store_true",
+        help="Print wake word detection scores every second"
+    )
     args = parser.parse_args()
 
     print()
@@ -218,7 +223,11 @@ def main():
     # Import and run pipeline
     from src.voice.pipeline import VoicePipeline
 
-    pipeline = VoicePipeline(debug=args.debug, use_wake_word=not args.no_wake)
+    pipeline = VoicePipeline(
+        debug=args.debug,
+        use_wake_word=not args.no_wake,
+        wake_debug=args.wake_debug,
+    )
     pipeline.SILENCE_THRESHOLD = args.silence_threshold
     pipeline.SILENCE_DURATION = args.silence_duration
 

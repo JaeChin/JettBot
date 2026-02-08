@@ -66,6 +66,10 @@ class WakeWordDetector:
         # Cooldown tracking
         self._last_trigger_time = 0.0
 
+        # Debug: throttle score printing to ~1 per second
+        self._last_debug_print = 0.0
+        self._debug_print_interval = 1.0
+
     def _load_model(self) -> None:
         """Load the openWakeWord model."""
         import openwakeword
@@ -96,6 +100,15 @@ class WakeWordDetector:
         # Run prediction
         prediction = self._model.predict(audio_chunk)
 
+        # Debug: print all scores periodically (~1/sec)
+        if self.debug:
+            now = time.monotonic()
+            if now - self._last_debug_print >= self._debug_print_interval:
+                self._last_debug_print = now
+                rms = float(np.sqrt(np.mean(audio_chunk ** 2)))
+                scores = ", ".join(f"{k}: {v:.2f}" for k, v in prediction.items())
+                print(f"[Wake] {scores}  (rms={rms:.4f})")
+
         # Check if wake word confidence exceeds threshold
         score = prediction.get(self.model_name, 0.0)
 
@@ -103,13 +116,13 @@ class WakeWordDetector:
             now = time.monotonic()
             if now - self._last_trigger_time < self.COOLDOWN_SECONDS:
                 if self.debug:
-                    print(f"[WakeWord] Detected (score={score:.2f}) but in cooldown")
+                    print(f"[Wake] COOLDOWN: {self.model_name} score {score:.2f} > threshold {self.threshold} (ignored)")
                 return
 
             self._last_trigger_time = now
 
             if self.debug:
-                print(f"[WakeWord] Detected! score={score:.2f}")
+                print(f"[Wake] TRIGGERED: {self.model_name} score {score:.2f} > threshold {self.threshold}")
 
             if self._on_wake:
                 self._on_wake()
@@ -132,6 +145,11 @@ class WakeWordDetector:
         self._running = True
         self._active.set()
 
+        if self.debug:
+            device_info = sd.query_devices(kind="input")
+            print(f"[Wake] Audio device: {device_info['name']}")
+            print(f"[Wake] Sample rate: {self.SAMPLE_RATE}Hz, Channels: {self.CHANNELS}, Chunk: {self.CHUNK_SIZE}")
+
         self._stream = sd.InputStream(
             samplerate=self.SAMPLE_RATE,
             channels=self.CHANNELS,
@@ -142,7 +160,7 @@ class WakeWordDetector:
         self._stream.start()
 
         if self.debug:
-            print("[WakeWord] Stream started")
+            print("[Wake] Stream started, listening...")
 
     def stop(self) -> None:
         """Stop listening and close the audio stream."""

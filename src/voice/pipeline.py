@@ -89,6 +89,7 @@ class VoicePipeline:
         tts_voice: str = "af_heart",
         debug: bool = False,
         use_wake_word: bool = True,
+        wake_debug: bool = False,
     ):
         self.ollama_url = ollama_url
         self.model = model
@@ -96,6 +97,7 @@ class VoicePipeline:
         self.tts_voice = tts_voice
         self.debug = debug
         self.use_wake_word = use_wake_word
+        self.wake_debug = wake_debug
 
         self.stt = None
         self.tts = None
@@ -114,7 +116,7 @@ class VoicePipeline:
         print("Loading wake word model...")
         self.wake_word_detector = WakeWordDetector(
             model_name="hey_jarvis",
-            debug=self.debug,
+            debug=self.wake_debug or self.debug,
         )
         # Eagerly load the model so startup latency is paid upfront
         self.wake_word_detector._load_model()
