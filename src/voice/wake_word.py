@@ -1,8 +1,9 @@
 """
 Jett Wake Word Detector — openWakeWord Integration
 
-Listens for "Hey Jett" (using the built-in "hey_jarvis" model) and
-triggers a callback when detected. Runs on CPU with ~1% usage.
+Listens for "Hey Jett" using a custom-trained openWakeWord model
+(models/hey_jett.onnx) and triggers a callback when detected.
+Runs on CPU with ~1% usage.
 
 The detector manages its own audio stream (16kHz, mono, 1280-sample chunks)
 and runs independently of the main pipeline recording stream.
@@ -21,6 +22,7 @@ Usage:
 
 import threading
 import time
+from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
@@ -40,17 +42,22 @@ class WakeWordDetector:
     CHANNELS = 1
     CHUNK_SIZE = 1280
 
-    # Detection parameters
+    # Custom-trained "Hey Jett" model (trained via openWakeWord Colab notebook)
+    DEFAULT_MODEL_PATH = Path(__file__).resolve().parent.parent.parent / "models" / "hey_jett.onnx"
+
+    # Detection parameters — threshold lowered to 0.5 for custom model tuning
     DEFAULT_THRESHOLD = 0.5
     COOLDOWN_SECONDS = 2.0
 
     def __init__(
         self,
-        model_name: str = "hey_jarvis",
+        model_path: Optional[Path] = None,
         threshold: float = DEFAULT_THRESHOLD,
         debug: bool = False,
     ):
-        self.model_name = model_name
+        self.model_path = str(model_path or self.DEFAULT_MODEL_PATH)
+        # openWakeWord uses the filename stem as the prediction dict key
+        self._model_key = Path(self.model_path).stem
         self.threshold = threshold
         self.debug = debug
 
@@ -72,20 +79,17 @@ class WakeWordDetector:
         self._debug_audio_info_printed = False
 
     def _load_model(self) -> None:
-        """Load the openWakeWord model."""
-        import openwakeword
+        """Load the custom openWakeWord model from ONNX file."""
         from openwakeword.model import Model
 
-        # Download default models if not present
-        openwakeword.utils.download_models()
-
         self._model = Model(
-            wakeword_models=[self.model_name],
+            wakeword_models=[self.model_path],
             inference_framework="onnx",
         )
 
         if self.debug:
-            print(f"[Wake] Loaded model: {self.model_name}")
+            print(f"[Wake] Loaded custom model: {self.model_path}")
+            print(f"[Wake] Model key: {self._model_key}")
             print(f"[Wake] Model keys: {list(self._model.models.keys())}")
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info, status) -> None:
@@ -119,19 +123,19 @@ class WakeWordDetector:
                 print(f"[Wake] {scores}  (rms={rms:.4f})")
 
         # Check if wake word confidence exceeds threshold
-        score = prediction.get(self.model_name, 0.0)
+        score = prediction.get(self._model_key, 0.0)
 
         if score > self.threshold:
             now = time.monotonic()
             if now - self._last_trigger_time < self.COOLDOWN_SECONDS:
                 if self.debug:
-                    print(f"[Wake] COOLDOWN: {self.model_name} score {score:.2f} > threshold {self.threshold} (ignored)")
+                    print(f"[Wake] COOLDOWN: {self._model_key} score {score:.2f} > threshold {self.threshold} (ignored)")
                 return
 
             self._last_trigger_time = now
 
             if self.debug:
-                print(f"[Wake] TRIGGERED: {self.model_name} score {score:.2f} > threshold {self.threshold}")
+                print(f"[Wake] TRIGGERED: {self._model_key} score {score:.2f} > threshold {self.threshold}")
 
             if self._on_wake:
                 self._on_wake()
@@ -205,15 +209,15 @@ class WakeWordDetector:
 if __name__ == "__main__":
     # Standalone test — bypasses pipeline to isolate wake word detection
     # Run: python src/voice/wake_word.py
-    import openwakeword
     from openwakeword.model import Model
 
-    openwakeword.utils.download_models()
-    model = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
+    model_path = str(WakeWordDetector.DEFAULT_MODEL_PATH)
+    model_key = "hey_jett"
 
+    model = Model(wakeword_models=[model_path], inference_framework="onnx")
+
+    print(f"Custom model: {model_path}")
     print(f"Model keys: {list(model.models.keys())}")
-    print(f"Model outputs: {model.model_outputs}")
-    print(f"Model inputs: {model.model_inputs}")
 
     device_info = sd.query_devices(kind="input")
     print(f"Audio device: {device_info['name']}")
@@ -230,21 +234,21 @@ if __name__ == "__main__":
         audio_int16 = (audio_f32 * 32767).astype(np.int16)
 
         prediction = model.predict(audio_int16)
-        score = prediction.get("hey_jarvis", 0)
+        score = prediction.get(model_key, 0)
         rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
 
         # Print every second OR when score is non-zero
         now = time.monotonic()
         if score > 0.001 or now - last_print >= 1.0:
             last_print = now
-            buf_len = len(model.prediction_buffer.get("hey_jarvis", []))
-            buf_last3 = list(model.prediction_buffer.get("hey_jarvis", []))[-3:]
+            buf_len = len(model.prediction_buffer.get(model_key, []))
+            buf_last3 = list(model.prediction_buffer.get(model_key, []))[-3:]
             buf_str = ", ".join(f"{v:.4f}" for v in buf_last3)
             marker = " <<<" if score > 0.5 else ""
-            print(f"  frame={frame_count:>5}  hey_jarvis={score:.4f}  "
+            print(f"  frame={frame_count:>5}  {model_key}={score:.4f}  "
                   f"rms={rms:.4f}  buf[{buf_len}]=[{buf_str}]{marker}")
 
-    print("Listening... say 'Hey Jarvis'. Ctrl+C to stop.")
+    print("Listening... say 'Hey Jett'. Ctrl+C to stop.")
     print("Prints every 1s, or immediately when score > 0.001")
     print("-" * 65)
     with sd.InputStream(samplerate=16000, channels=1, blocksize=1280,

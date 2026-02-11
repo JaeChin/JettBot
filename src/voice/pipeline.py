@@ -115,7 +115,6 @@ class VoicePipeline:
 
         print("Loading wake word model...")
         self.wake_word_detector = WakeWordDetector(
-            model_name="hey_jarvis",
             debug=self.wake_debug or self.debug,
         )
         # Eagerly load the model so startup latency is paid upfront
