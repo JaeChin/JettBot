@@ -210,3 +210,67 @@
 
 **Interview Framing**:
 > "I disabled the model's chain-of-thought for voice interactions because latency matters more than reasoning depth for simple commands. Complex queries route to Claude via hybrid routing, so local inference optimizes for speed."
+
+---
+
+## ADR-010: Keyword Heuristic Router Over ML Classifier
+
+**Status**: Accepted
+**Date**: 2026-02-18
+
+**Context**: The hybrid router needs to decide whether a voice query should go to local Qwen3 (fast, limited reasoning) or cloud Claude (slower, better reasoning). Need a classification method.
+
+**Options Considered**:
+1. ML classifier (fine-tuned BERT/DistilBERT) — learned decision boundary
+2. Embedding similarity (sentence-transformers) — compare against exemplar clusters
+3. Keyword heuristic — regex pattern matching on known signals
+4. LLM self-routing — ask the local LLM to classify itself
+
+**Decision**: Keyword heuristic classifier with regex patterns.
+
+**Rationale**:
+- <1ms latency — adds zero perceptible delay to the pipeline
+- Zero VRAM — runs on CPU, no model to load
+- Transparent — decisions are explainable (matched pattern X)
+- Good enough — voice queries have strong lexical signals ("explain X" vs "what time is it")
+- Iteratable — easy to add/remove patterns based on observed misroutes
+
+**Consequences**:
+- Pro: Zero overhead, zero VRAM, instant decisions
+- Pro: Fully explainable — debug mode shows which patterns matched
+- Pro: Graceful fallback — if cloud is unavailable, everything routes local
+- Con: Won't catch subtle complexity (e.g., a short but deep question)
+- Con: Requires manual tuning of patterns
+- Mitigated: v2 can use embedding similarity if keyword approach proves insufficient
+
+**Interview Framing**:
+> "I started with keyword heuristics for routing — regex patterns that detect complexity signals like 'explain', 'compare', 'write'. It adds <1ms latency and zero VRAM. The key insight is that voice queries have strong lexical signals — people say 'what time is it', not ambiguous prompts. If the heuristic proves insufficient, I can upgrade to embedding-based classification without changing the router interface."
+
+---
+
+## ADR-011: Claude Sonnet as Default Cloud Backend
+
+**Status**: Accepted
+**Date**: 2026-02-18
+
+**Context**: Need to choose which Claude model to use for cloud-routed queries.
+
+**Options Considered**:
+1. Claude Opus — most capable, highest cost, slowest
+2. Claude Sonnet — strong capability, moderate cost, fast
+3. Claude Haiku — fastest, cheapest, less capable
+
+**Decision**: Default to Claude Sonnet 4.5, configurable via `--cloud-model` flag.
+
+**Rationale**:
+- Best balance of capability and latency for voice use case
+- Complex queries that route to cloud need good reasoning (rules out Haiku)
+- Voice needs reasonable latency — Opus is overkill for most routed queries
+- Configurable: power users can override to Opus for maximum quality or Haiku for cost savings
+
+**Consequences**:
+- Pro: Good reasoning for complex queries that local LLM can't handle
+- Pro: Fast enough for voice (~1-2s first token)
+- Pro: User can override via CLI flag
+- Con: Higher cost than Haiku (~$3 vs $0.25 per million input tokens)
+- Mitigated: Most queries still route local — cloud is the exception, not the rule

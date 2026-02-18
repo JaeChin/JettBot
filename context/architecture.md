@@ -71,11 +71,16 @@ LOCAL (RTX 3070)                         VPS (Hostinger)
 | TTS | Kokoro-82M | GPU | 0.2 GB |
 
 ### LLM Layer (Local + Cloud)
-| Component | Technology | Runs On | VRAM |
-|---|---|---|---|
-| Local LLM | Qwen3 8B (Q4_K_M) via Ollama | GPU | 4.5 GB |
-| Cloud LLM | Claude API | Remote | 0 |
-| Router | Complexity classifier | CPU | 0 |
+| Component | Technology | Runs On | VRAM | Status |
+|---|---|---|---|---|
+| Local LLM | Qwen3 8B (Q4_K_M) via Ollama | GPU | 5.28 GB | ✅ |
+| Cloud LLM | Claude Sonnet via Anthropic SDK | Remote | 0 | ✅ |
+| Router | QueryRouter — keyword heuristic classifier | CPU | 0 | ✅ |
+
+**Router Modes:**
+- `local` — All queries to Ollama (default, backward compatible)
+- `cloud` — All queries to Claude API
+- `hybrid` — Classify and route: simple → local, complex → cloud
 
 ### VPS Services (Remote)
 | Service | Port | Purpose |
@@ -98,8 +103,8 @@ LOCAL (RTX 3070)                         VPS (Hostinger)
 2. **Wake word** → openWakeWord detects "Hey Jett" (CPU)
 3. **VAD** → Silero detects speech boundaries (CPU)
 4. **STT** → faster-whisper transcribes audio (GPU, 1.5 GB)
-5. **Router** → Classifies query complexity (CPU)
-6. **LLM** → Local (Qwen3) or cloud (Claude) generates response
+5. **Router** → QueryRouter classifies query complexity via keyword heuristics (CPU, <1ms)
+6. **LLM** → Local (Qwen3 via Ollama) or cloud (Claude via Anthropic SDK) generates streaming response
 7. **TTS** → Kokoro synthesizes speech (GPU, 0.2 GB)
 8. **Audio output** → Speaker plays response
 

@@ -1,6 +1,6 @@
 # Jett Project State
 
-> Last updated: 2026-02-07
+> Last updated: 2026-02-18
 > Updated by: Opus
 
 ---
@@ -45,7 +45,7 @@
 | openWakeWord setup | ✅ | Working with hey_jarvis, 0.99+ confidence |
 | Silero VAD integration | ✅ | Using openWakeWord's built-in VAD |
 | Always-listening daemon | ✅ | Wake word detector runs continuously on CPU |
-| Custom "Hey Jett" model | ⬜ | Future (currently using hey_jarvis) |
+| Custom "Hey Jett" model | ✅ | Trained & integrated (commit 3528d67), accuracy issues — shelved for now |
 
 ### Phase 2 Final Metrics
 
@@ -59,13 +59,13 @@
 
 ---
 
-## Phase 3: Hybrid Routing & Custom Wake Word — NOT STARTED
+## Phase 3: Hybrid Routing & Custom Wake Word — IN PROGRESS
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Custom "Hey Jett" wake word | ⬜ | Train custom openWakeWord model |
+| Custom "Hey Jett" wake word | ⏸️ | Trained but accuracy issues — shelved, using hey_jarvis |
 | Silero VAD for silence detection | ⬜ | Replace energy-based silence detection |
-| Hybrid routing (local + cloud LLM) | ⬜ | Route complex queries to cloud |
+| Hybrid routing (local + cloud LLM) | ✅ | QueryRouter + CloudLLM implemented |
 
 ---
 
@@ -106,6 +106,9 @@
 - [x] Disabled Qwen3 thinking mode — 1.5s faster, 80 fewer tokens per response
 - [x] Brevity system prompt — 1-2 sentence max responses
 - [x] Detailed pipeline metrics — full component timing breakdown
+- [x] **Hybrid LLM routing** — QueryRouter classifies queries, routes to local or cloud
+- [x] CloudLLM wrapper for Anthropic streaming API
+- [x] CLI flags: --router-mode {local,cloud,hybrid}, --cloud-model
 
 ## Blockers
 
@@ -210,3 +213,15 @@
 - Wake word paused during playback (no self-triggering)
 - Full pipeline: wake word → STT → LLM → TTS → back to wake word
 - **Phase 2 COMPLETE**
+
+### 2026-02-18 (Laptop — No GPU)
+- Custom "Hey Jett" wake word shelved — accuracy issues despite training efforts
+- Implemented hybrid LLM routing (src/llm/router.py, src/llm/cloud.py)
+  - QueryRouter: keyword heuristic classifier (local vs cloud, <1ms, CPU-only)
+  - CloudLLM: Anthropic SDK streaming wrapper, yields tokens same as Ollama
+  - Pipeline refactored: generate_response() now routes through QueryRouter
+  - Graceful fallback: cloud unavailable → automatic local fallback
+- CLI flags: --router-mode {local,cloud,hybrid}, --cloud-model
+- .env support for ANTHROPIC_API_KEY via python-dotenv
+- Added `anthropic` SDK to requirements.txt
+- Qwen 3.5 researched — only 397B MoE released (Feb 16), no small models yet

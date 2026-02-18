@@ -14,6 +14,9 @@ numpy>=1.26.0,<2.0.0
 # HTTP (required by faster-whisper but not declared)
 requests
 
+# Cloud LLM (hybrid routing)
+anthropic>=0.40.0
+
 # Utilities
 python-dotenv==1.0.1
 

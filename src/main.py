@@ -196,6 +196,17 @@ def main():
         action="store_true",
         help="Print wake word detection scores every second"
     )
+    parser.add_argument(
+        "--router-mode",
+        choices=["local", "cloud", "hybrid"],
+        default="local",
+        help="LLM routing mode (default: local)"
+    )
+    parser.add_argument(
+        "--cloud-model",
+        default="claude-sonnet-4-5-20250929",
+        help="Claude model for cloud routing (default: claude-sonnet-4-5-20250929)"
+    )
     args = parser.parse_args()
 
     print()
@@ -223,10 +234,19 @@ def main():
     # Import and run pipeline
     from src.voice.pipeline import VoicePipeline
 
+    # Load .env for API keys
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     pipeline = VoicePipeline(
         debug=args.debug,
         use_wake_word=not args.no_wake,
         wake_debug=args.wake_debug,
+        router_mode=args.router_mode,
+        cloud_model=args.cloud_model,
     )
     pipeline.SILENCE_THRESHOLD = args.silence_threshold
     pipeline.SILENCE_DURATION = args.silence_duration

@@ -59,6 +59,7 @@ class PipelineMetrics:
     token_count: int = 0
     user_text: str = ""
     jett_text: str = ""
+    llm_backend: str = "local"
 
 
 class VoicePipeline:
@@ -90,6 +91,8 @@ class VoicePipeline:
         debug: bool = False,
         use_wake_word: bool = True,
         wake_debug: bool = False,
+        router_mode: str = "local",
+        cloud_model: str = "claude-sonnet-4-5-20250929",
     ):
         self.ollama_url = ollama_url
         self.model = model
@@ -98,12 +101,16 @@ class VoicePipeline:
         self.debug = debug
         self.use_wake_word = use_wake_word
         self.wake_debug = wake_debug
+        self.router_mode = router_mode
+        self.cloud_model = cloud_model
 
         self.stt = None
         self.tts = None
         self._running = False
         self._audio_queue = queue.Queue()
         self._state = PipelineState.LISTENING
+        self._router = None
+        self._cloud_llm = None
 
         # Wake word
         self.wake_word_detector = None
@@ -160,7 +167,74 @@ class VoicePipeline:
         except Exception as e:
             print(f"LLM warmup warning: {e}")
 
+        # Initialize router
+        self._init_router()
+
         print("Models loaded and ready.")
+
+    def _init_router(self) -> None:
+        """Initialize the hybrid LLM router."""
+        from src.llm.router import QueryRouter
+        from src.llm.cloud import CloudLLM
+
+        if self.router_mode in ("cloud", "hybrid"):
+            self._cloud_llm = CloudLLM(model=self.cloud_model)
+            if not self._cloud_llm.available:
+                if self.router_mode == "cloud":
+                    print("WARNING: Cloud mode selected but ANTHROPIC_API_KEY not set.")
+                    print("  Set it in .env or as an environment variable.")
+                    print("  Falling back to local mode.")
+                    self.router_mode = "local"
+                else:
+                    print("Note: ANTHROPIC_API_KEY not set — hybrid mode will use local only.")
+
+        cloud_fn = self._stream_cloud if self._cloud_llm and self._cloud_llm.available else None
+        self._router = QueryRouter(
+            mode=self.router_mode,
+            local_fn=self._stream_local,
+            cloud_fn=cloud_fn,
+        )
+
+        mode_label = {
+            "local": "Local only (Ollama)",
+            "cloud": "Cloud only (Claude API)",
+            "hybrid": "Hybrid (local + cloud)",
+        }
+        print(f"Router: {mode_label.get(self.router_mode, self.router_mode)}")
+
+    def _stream_local(self, prompt: str) -> Generator[str, None, None]:
+        """Stream response from local Ollama/Qwen3."""
+        response = requests.post(
+            f"{self.ollama_url}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": True,
+                "keep_alive": -1,
+                "think": False,
+                "options": {
+                    "num_predict": 80,
+                }
+            },
+            stream=True,
+            timeout=60
+        )
+
+        for line in response.iter_lines():
+            if line:
+                data = json.loads(line)
+                if "message" in data and "content" in data["message"]:
+                    chunk = data["message"]["content"]
+                    if chunk:
+                        yield chunk
+                if data.get("done", False):
+                    break
+
+    def _stream_cloud(self, prompt: str) -> Generator[str, None, None]:
+        """Stream response from Claude API."""
+        yield from self._cloud_llm.stream(prompt)
 
     def _calculate_rms(self, audio: np.ndarray) -> float:
         """Calculate RMS (volume level) of audio."""
@@ -241,44 +315,27 @@ class VoicePipeline:
         finally:
             os.unlink(temp_path)
 
-    def generate_response(self, prompt: str) -> Generator[str, None, None]:
+    def generate_response(self, prompt: str) -> tuple[Generator[str, None, None], str]:
         """
-        Generate LLM response, streaming tokens.
+        Route and generate LLM response, streaming tokens.
 
-        Uses /api/chat for better performance (cached system prompt).
-
-        Yields:
-            Response text chunks.
+        Returns:
+            Tuple of (token generator, backend name).
+            Backend is "local" or "cloud".
         """
-        # Use /api/chat for better streaming performance
-        response = requests.post(
-            f"{self.ollama_url}/api/chat",
-            json={
-                "model": self.model,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ],
-                "stream": True,
-                "keep_alive": -1,  # Keep model loaded indefinitely
-                "think": False,    # Disable Qwen3 thinking (saves ~1.5s + ~80 tokens)
-                "options": {
-                    "num_predict": 80,  # 1-2 sentences without think overhead
-                }
-            },
-            stream=True,
-            timeout=60
-        )
+        from src.llm.router import classify
 
-        for line in response.iter_lines():
-            if line:
-                data = json.loads(line)
+        if self._router is None:
+            # Fallback if router not initialized
+            return self._stream_local(prompt), "local"
 
-                if "message" in data and "content" in data["message"]:
-                    chunk = data["message"]["content"]
-                    if chunk:
-                        yield chunk
-                if data.get("done", False):
-                    break
+        backend = self._router._decide(prompt)
+
+        if self.debug:
+            info = self._router.explain(prompt)
+            print(f"  [Router] → {backend} (signals: {info['cloud_signals'][:2]})")
+
+        return self._router.route(prompt), backend
 
     def split_sentences(self, text: str) -> list[str]:
         """Split text into sentences for TTS."""
@@ -414,7 +471,8 @@ class VoicePipeline:
             return metrics
 
         # LLM + TTS (streaming)
-        response_generator = self.generate_response(user_text)
+        response_generator, backend = self.generate_response(user_text)
+        metrics.llm_backend = backend
         result = self.speak_streaming(response_generator)
 
         metrics.llm_first_token_ms = result["first_token_ms"]
@@ -432,6 +490,8 @@ class VoicePipeline:
         """Print interaction metrics with full component breakdown."""
         print()
         print("--- Jett Pipeline ---")
+        backend_label = "local" if metrics.llm_backend == "local" else "cloud"
+        print(f"  LLM backend:    {backend_label}")
         print(f"  STT:            {metrics.stt_ms:>6.0f}ms")
         print(f"  LLM first tok:  {metrics.llm_first_token_ms:>6.0f}ms")
         print(f"  LLM total:      {metrics.llm_total_ms:>6.0f}ms  ({metrics.token_count} tokens)")
