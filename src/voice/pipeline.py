@@ -33,6 +33,7 @@ import numpy as np
 import requests
 import sounddevice as sd
 import soundfile as sf
+import torch
 
 # Suppress warnings
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -72,10 +73,10 @@ class VoicePipeline:
     # Audio recording parameters
     SAMPLE_RATE = 16000  # Whisper expects 16kHz
     CHANNELS = 1
-    BLOCK_SIZE = 1024
+    BLOCK_SIZE = 512     # Silero VAD optimal chunk size (512 samples @ 16kHz = 32ms)
 
     # Silence detection parameters (optimized for low latency)
-    SILENCE_THRESHOLD = 0.005  # RMS threshold for silence (lowered for quiet mics)
+    SILENCE_THRESHOLD = 0.5    # VAD probability threshold (0.0-1.0)
     SILENCE_DURATION = 0.5     # Seconds of silence to end recording
     MAX_RECORD_SECONDS = 30    # Maximum recording length
 
@@ -93,6 +94,7 @@ class VoicePipeline:
         wake_debug: bool = False,
         router_mode: str = "local",
         cloud_model: str = "claude-sonnet-4-5-20250929",
+        use_vad: bool = True,
     ):
         self.ollama_url = ollama_url
         self.model = model
@@ -103,6 +105,7 @@ class VoicePipeline:
         self.wake_debug = wake_debug
         self.router_mode = router_mode
         self.cloud_model = cloud_model
+        self.use_vad = use_vad
 
         self.stt = None
         self.tts = None
@@ -111,6 +114,7 @@ class VoicePipeline:
         self._state = PipelineState.LISTENING
         self._router = None
         self._cloud_llm = None
+        self._vad_model = None
 
         # Wake word
         self.wake_word_detector = None
@@ -131,6 +135,21 @@ class VoicePipeline:
     def _on_wake_detected(self) -> None:
         """Callback invoked by WakeWordDetector when wake word is heard."""
         self._wake_event.set()
+
+    def _load_vad(self) -> None:
+        """Load Silero VAD model via torch.hub (CPU-only, ~2MB cached)."""
+        print("Loading Silero VAD model...")
+        model, utils = torch.hub.load(
+            'snakers4/silero-vad', 'silero_vad', trust_repo=True
+        )
+        model = model.to('cpu')
+        self._vad_model = model
+        print("Silero VAD loaded (CPU).")
+
+    def _speech_probability(self, chunk: np.ndarray) -> float:
+        """Return speech probability (0.0-1.0) for an audio chunk using Silero VAD."""
+        tensor = torch.from_numpy(chunk.flatten()).float()
+        return self._vad_model(tensor, self.SAMPLE_RATE).item()
 
     def load_models(self) -> None:
         """Load STT and TTS models."""
@@ -169,6 +188,10 @@ class VoicePipeline:
 
         # Initialize router
         self._init_router()
+
+        # Load VAD if enabled
+        if self.use_vad:
+            self._load_vad()
 
         print("Models loaded and ready.")
 
@@ -244,10 +267,17 @@ class VoicePipeline:
         """
         Record audio from microphone until silence is detected.
 
+        Uses Silero VAD (neural speech classifier) by default, or falls back
+        to RMS energy detection when use_vad=False.
+
         Returns:
             Audio as numpy array, or None if no speech detected.
         """
         print("Listening...", end="", flush=True)
+
+        # Reset VAD state between recording sessions
+        if self.use_vad and self._vad_model is not None:
+            self._vad_model.reset_states()
 
         audio_chunks = []
         silence_chunks = 0
@@ -273,13 +303,21 @@ class VoicePipeline:
                     audio_chunks.append(chunk)
                     chunk_count += 1
 
-                    rms = self._calculate_rms(chunk)
+                    if self.use_vad and self._vad_model is not None:
+                        prob = self._speech_probability(chunk)
+                        is_speech = prob > self.SILENCE_THRESHOLD
+                        if self.debug:
+                            rms = self._calculate_rms(chunk)
+                            print(f" [VAD] prob={prob:.2f} rms={rms:.4f}", end="", flush=True)
+                    else:
+                        rms = self._calculate_rms(chunk)
+                        is_speech = rms > self.SILENCE_THRESHOLD
+                        if self.debug:
+                            print(".", end="", flush=True) if is_speech else None
 
-                    if rms > self.SILENCE_THRESHOLD:
+                    if is_speech:
                         has_speech = True
                         silence_chunks = 0
-                        if self.debug:
-                            print(".", end="", flush=True)
                     else:
                         silence_chunks += 1
 

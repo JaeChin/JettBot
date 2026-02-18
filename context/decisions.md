@@ -274,3 +274,38 @@
 - Pro: User can override via CLI flag
 - Con: Higher cost than Haiku (~$3 vs $0.25 per million input tokens)
 - Mitigated: Most queries still route local — cloud is the exception, not the rule
+
+---
+
+## ADR-012: Silero VAD Over RMS Energy Detection
+
+**Status**: Accepted
+**Date**: 2026-02-18
+
+**Context**: The pipeline uses RMS energy thresholds to detect when a user stops speaking. This is unreliable — quiet speech gets cut off early, and loud background noise keeps recording going. Need a more robust end-of-speech detector.
+
+**Options Considered**:
+1. RMS energy threshold (current) — simple, no dependencies, unreliable
+2. Silero VAD — neural speech classifier, returns probability per chunk
+3. WebRTC VAD — C-based, fast, but less accurate than neural approaches
+4. openWakeWord's built-in VAD — already in the project but tied to wake word lifecycle
+
+**Decision**: Replace RMS with Silero VAD as the default silence detection method. Keep RMS as a `--no-vad` fallback.
+
+**Rationale**:
+- Neural classifier distinguishes speech from noise regardless of volume
+- Runs on CPU with zero VRAM impact — critical for the 8GB VRAM budget
+- ~2MB model loaded via `torch.hub.load` (PyTorch already installed)
+- No new pip dependency — Silero downloads and caches via torch.hub
+- Same `record_audio()` interface — returns Optional[np.ndarray]
+
+**Consequences**:
+- Pro: Reliable silence detection regardless of background noise or speech volume
+- Pro: Zero VRAM — CPU-only inference
+- Pro: No new pip dependency (uses existing PyTorch)
+- Pro: RMS fallback preserved via --no-vad
+- Con: Requires internet on first run to download model (~2MB, cached after)
+- Con: Slightly higher CPU usage than RMS (negligible on modern hardware)
+
+**Interview Framing**:
+> "I replaced simple volume thresholds with Silero VAD — a neural speech classifier that returns a probability score per audio chunk. Volume-based detection cuts off quiet speech and gets confused by background noise. The neural model classifies actual speech patterns, runs on CPU with zero VRAM impact, and loads via PyTorch's hub system — no new dependency."

@@ -5,7 +5,7 @@
 
 ---
 
-## Current Phase: Phase 3 — Hybrid Routing & Custom Wake Word
+## Current Phase: Phase 3 — Hybrid Routing & Custom Wake Word — ✅ COMPLETE
 
 ---
 
@@ -59,12 +59,12 @@
 
 ---
 
-## Phase 3: Hybrid Routing & Custom Wake Word — IN PROGRESS
+## Phase 3: Hybrid Routing & Custom Wake Word — ✅ COMPLETE
 
 | Task | Status | Notes |
 |------|--------|-------|
 | Custom "Hey Jett" wake word | ⏸️ | Trained but accuracy issues — shelved, using hey_jarvis |
-| Silero VAD for silence detection | ⬜ | Replace energy-based silence detection |
+| Silero VAD for silence detection | ✅ | Replaces RMS energy detection, CPU-only via torch.hub |
 | Hybrid routing (local + cloud LLM) | ✅ | QueryRouter + CloudLLM implemented |
 
 ---
@@ -225,3 +225,14 @@
 - .env support for ANTHROPIC_API_KEY via python-dotenv
 - Added `anthropic` SDK to requirements.txt
 - Qwen 3.5 researched — only 397B MoE released (Feb 16), no small models yet
+
+### 2026-02-18 (Continued)
+- Replaced RMS energy silence detection with Silero VAD in pipeline.py
+  - Neural speech probability (0.0-1.0) instead of RMS threshold
+  - CPU-only (~2MB model via torch.hub), zero VRAM impact
+  - Stateful model — reset_states() between recording sessions
+  - BLOCK_SIZE 1024 → 512 (Silero optimal)
+  - SILENCE_THRESHOLD 0.005 → 0.5 (VAD probability)
+- Added --no-vad flag for RMS fallback
+- --silence-threshold auto-defaults based on mode (0.5 VAD, 0.01 RMS)
+- **Phase 3 COMPLETE**

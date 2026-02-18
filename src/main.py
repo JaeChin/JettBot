@@ -23,9 +23,10 @@ Phase 2 Features:
     - Wake word detection ("Hey Jett" via openWakeWord, CPU-only)
     - --no-wake flag for always-listening mode
 
-Coming in Phase 3:
-    - Voice Activity Detection (Silero VAD)
+Phase 3 Features:
+    - Silero VAD for silence detection (replaces RMS energy)
     - Hybrid routing (local + cloud LLM)
+    - --no-vad flag for RMS fallback
 """
 
 import argparse
@@ -177,14 +178,19 @@ def main():
     parser.add_argument(
         "--silence-threshold",
         type=float,
-        default=0.01,
-        help="RMS threshold for silence detection (default: 0.01)"
+        default=None,
+        help="Silence detection threshold (default: 0.5 for VAD, 0.01 for RMS)"
     )
     parser.add_argument(
         "--silence-duration",
         type=float,
         default=1.0,
         help="Seconds of silence to end recording (default: 1.0)"
+    )
+    parser.add_argument(
+        "--no-vad",
+        action="store_true",
+        help="Disable Silero VAD, use RMS energy silence detection instead"
     )
     parser.add_argument(
         "--no-wake",
@@ -241,14 +247,22 @@ def main():
     except ImportError:
         pass
 
+    use_vad = not args.no_vad
     pipeline = VoicePipeline(
         debug=args.debug,
         use_wake_word=not args.no_wake,
         wake_debug=args.wake_debug,
         router_mode=args.router_mode,
         cloud_model=args.cloud_model,
+        use_vad=use_vad,
     )
-    pipeline.SILENCE_THRESHOLD = args.silence_threshold
+
+    # Auto-set silence threshold based on detection mode
+    if args.silence_threshold is not None:
+        pipeline.SILENCE_THRESHOLD = args.silence_threshold
+    elif not use_vad:
+        pipeline.SILENCE_THRESHOLD = 0.01  # RMS default
+
     pipeline.SILENCE_DURATION = args.silence_duration
 
     try:

@@ -6,6 +6,9 @@ ctranslate2==4.4.0
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
 
+# VAD - Voice Activity Detection (Silero VAD via torch.hub)
+torchaudio
+
 # Audio capture and processing
 sounddevice==0.4.6
 soundfile==0.12.1
