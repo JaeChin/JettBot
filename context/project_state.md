@@ -43,7 +43,6 @@
 | Task | Status | Notes |
 |------|--------|-------|
 | openWakeWord setup | ✅ | Working with hey_jarvis, 0.99+ confidence |
-| Silero VAD integration | ✅ | Using openWakeWord's built-in VAD |
 | Always-listening daemon | ✅ | Wake word detector runs continuously on CPU |
 | Custom "Hey Jett" model | ✅ | Trained & integrated (commit 3528d67), accuracy issues — shelved for now |
 
@@ -109,6 +108,9 @@
 - [x] **Hybrid LLM routing** — QueryRouter classifies queries, routes to local or cloud
 - [x] CloudLLM wrapper for Anthropic streaming API
 - [x] CLI flags: --router-mode {local,cloud,hybrid}, --cloud-model
+- [x] **Silero VAD** — replaces RMS energy silence detection, CPU-only via torch.hub
+- [x] CLI flags: --no-vad (RMS fallback), --silence-threshold auto-defaults by mode
+- [x] Added `torchaudio` dependency (required by Silero VAD)
 
 ## Blockers
 
@@ -214,7 +216,7 @@
 - Full pipeline: wake word → STT → LLM → TTS → back to wake word
 - **Phase 2 COMPLETE**
 
-### 2026-02-18 (Laptop — No GPU)
+### 2026-02-18 (Desktop — RTX 3070)
 - Custom "Hey Jett" wake word shelved — accuracy issues despite training efforts
 - Implemented hybrid LLM routing (src/llm/router.py, src/llm/cloud.py)
   - QueryRouter: keyword heuristic classifier (local vs cloud, <1ms, CPU-only)
