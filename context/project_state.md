@@ -5,7 +5,7 @@
 
 ---
 
-## Current Phase: Phase 3 — Hybrid Routing & Custom Wake Word — ✅ COMPLETE
+## Current Phase: Phase 4 — Conversation Memory & Tool Use
 
 ---
 
@@ -65,6 +65,44 @@
 | Custom "Hey Jett" wake word | ⏸️ | Trained but accuracy issues — shelved, using hey_jarvis |
 | Silero VAD for silence detection | ✅ | Replaces RMS energy detection, CPU-only via torch.hub |
 | Hybrid routing (local + cloud LLM) | ✅ | QueryRouter + CloudLLM implemented |
+
+---
+
+## Phase 4: Conversation Memory & Tool Use — PLANNED
+
+Right now Jett is stateless — each voice interaction is independent. Phase 4 makes Jett conversational and useful by adding multi-turn memory and the ability to take actions.
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Conversation memory | ⬜ | Rolling context window so Jett remembers what was just said |
+| Multi-turn prompt management | ⬜ | Maintain message history, trim to fit ctx=2048 budget |
+| Tool use / function calling | ⬜ | Let Jett execute actions (weather, timers, system info, etc.) |
+| Tool framework | ⬜ | Registry pattern — define tools as Python functions with schemas |
+| Built-in tools (starter set) | ⬜ | Time/date, weather, timer, system stats |
+| Confirmation flow | ⬜ | "Did you mean X?" for ambiguous or destructive tool calls |
+
+### Design Notes
+
+**Conversation Memory**
+- Keep a rolling `messages: list[dict]` in VoicePipeline
+- Each turn appends `{"role": "user", "content": text}` and `{"role": "assistant", "content": response}`
+- Trim oldest messages when total tokens approach ctx=2048 limit
+- Reset on wake word timeout (e.g., 60s of silence = new conversation)
+- Cloud-routed queries can use a larger context since Claude has 200K tokens
+
+**Tool Use**
+- Qwen3 8B supports tool/function calling format natively
+- Define tools as decorated Python functions with JSON schema
+- Pipeline detects tool-call responses from LLM, executes locally, feeds result back
+- Start small: time, date, weather (free API), system stats (CPU/GPU/RAM)
+- Security: tools run in allowlist — same philosophy as ADR-007
+
+### Loose Ends (backlog from earlier phases)
+- Mic reads rms=0.0000 on SteelSeries Sonar — investigate device selection
+- Custom "Hey Jett" wake word — shelved, revisit with better training data
+- Dashboard — scaffolded but needs backend integration
+- VPS deployment — docker-compose ready, not deployed to laptop
+- STT latency 670ms vs <300ms target
 
 ---
 
